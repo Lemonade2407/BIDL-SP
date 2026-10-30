@@ -1,0 +1,147 @@
+{
+    "package":  "TransUNet + CE+Dice + A2+A1",
+    "created":  "2026-10-30",
+    "note":  "不含第三方 TransUNet/ (commit 02ef0010b36eb8328b5e689eadaf613602edf9b8) 与 BUSI 数据集",
+    "files":  [
+                  {
+                      "path":  "README.md",
+                      "bytes":  6673,
+                      "sha256":  "c719b5d2c54327138415cb32e00e9af372093d2934e9093191c377c25f6e8605"
+                  },
+                  {
+                      "path":  "checkpoints/README.md",
+                      "bytes":  2696,
+                      "sha256":  "a339671a64f08b3e995cfc117daa00eb4470106288e3b591843e5485a391dab8"
+                  },
+                  {
+                      "path":  "code/busi_common.py",
+                      "bytes":  6449,
+                      "sha256":  "f6e9da9bf7e41bc418bc118be2e4b277ffe732db850bb074a3ba3c112df0cac3"
+                  },
+                  {
+                      "path":  "code/eval_postproc.py",
+                      "bytes":  8958,
+                      "sha256":  "8b91bc5096ca885cb60f861f4dffa5462133f9be49a2e5cce6bf751d860b3144"
+                  },
+                  {
+                      "path":  "code/models.py",
+                      "bytes":  7089,
+                      "sha256":  "29641af1da39b59a28ea6b5316c534966a47b7635589c5bbf79106f851e700dd"
+                  },
+                  {
+                      "path":  "code/train_supervised.py",
+                      "bytes":  16502,
+                      "sha256":  "e3a03c6eea71022f38f83aa45526ca64f5ea2839bd981dd37c7c858c80175bdb"
+                  },
+                  {
+                      "path":  "code/__pycache__/busi_common.cpython-313.pyc",
+                      "bytes":  10004,
+                      "sha256":  "29618c2908c4aeaa57b724b9b8c3604e7f8282cda9076ae1accc2645501397a8"
+                  },
+                  {
+                      "path":  "code/__pycache__/models.cpython-313.pyc",
+                      "bytes":  13835,
+                      "sha256":  "65387de34dc0cee32d2d2bd0974fa5b159d02603a255dd23535ff4b64d33f6cc"
+                  },
+                  {
+                      "path":  "code/__pycache__/train_supervised.cpython-313.pyc",
+                      "bytes":  30595,
+                      "sha256":  "4de75743267180aaa5c0ed1f2ab1fe80d7a9378a82118244b5c3e63219bf9104"
+                  },
+                  {
+                      "path":  "data/DATASET.md",
+                      "bytes":  1939,
+                      "sha256":  "2e374a261d749ee35cf5a6f1d6a9c3d7de59e9bfc4ad17f44be60397bb346326"
+                  },
+                  {
+                      "path":  "data/splits/busi_seed0.json",
+                      "bytes":  26497,
+                      "sha256":  "6d71095e180165382474fdd9caca1f5662690cede83563fffeadd49ca7adebc8"
+                  },
+                  {
+                      "path":  "env/environment.md",
+                      "bytes":  1151,
+                      "sha256":  "80b12e1f97b44a0567320e9f05a890f63529bedd7f7044140a9df5bfbe0544c1"
+                  },
+                  {
+                      "path":  "env/requirements.txt",
+                      "bytes":  102,
+                      "sha256":  "4cf9cdd0335e61d7e203fd7b38b14fcd55f1693787886a417f4c9dcf591c961f"
+                  },
+                  {
+                      "path":  "results/env.json",
+                      "bytes":  416,
+                      "sha256":  "4953b0566f1348e26239ae4cceef9077cc90c42d738377771292d45277be19eb"
+                  },
+                  {
+                      "path":  "results/p1_transunet_seed0.json",
+                      "bytes":  69437,
+                      "sha256":  "a0227c38383b90bd7660b08224e235f1551830c3bed82cd29c7a614d872fdfd2"
+                  },
+                  {
+                      "path":  "results/p1_transunet_seed0.pth",
+                      "bytes":  421469375,
+                      "sha256":  "8369da0018cf7c6dffc8e3846b5630ad41ff3ade147977f3c90c93d8c2c2637c"
+                  },
+                  {
+                      "path":  "results/p1_transunet_seed1.json",
+                      "bytes":  67548,
+                      "sha256":  "d4f2bd8dedeb5c52d8743664e2f4dd5db1ed40b8ca5c33c82dd83958548c3f55"
+                  },
+                  {
+                      "path":  "results/p1_transunet_seed1.pth",
+                      "bytes":  421469375,
+                      "sha256":  "efaf740cad7a698d85beeacace4b5ae5d4649d70b1c625397e15ab2637845b1b"
+                  },
+                  {
+                      "path":  "results/p1_transunet_seed2.json",
+                      "bytes":  65785,
+                      "sha256":  "b407a1c7c30c23797a17a21fe0dad9dbb79d749d038ea19f1bca5f809d5ad778"
+                  },
+                  {
+                      "path":  "results/p1_transunet_seed2.pth",
+                      "bytes":  421469375,
+                      "sha256":  "ab03a6d12390dc08711cc60feb9e0542da6ec8ae13532c30200241ddf854f20c"
+                  },
+                  {
+                      "path":  "results/postproc_p1_transunet_s256rgb_seed0.json",
+                      "bytes":  538323,
+                      "sha256":  "262a8e6c86b12473c7f923ab9d785293b9e5b52dd6387a3f41dadd76f5b864f0"
+                  },
+                  {
+                      "path":  "results/postproc_p1_transunet_s256rgb_seed1.json",
+                      "bytes":  537189,
+                      "sha256":  "6c6c8c7523ac1be552beb6e0bccf27ddcbd0e6fcba9e60138f6810a49ba09b54"
+                  },
+                  {
+                      "path":  "results/postproc_p1_transunet_s256rgb_seed2.json",
+                      "bytes":  540791,
+                      "sha256":  "0cbcc9591310d4f3f9bf03eeabeccedca57b3f055a54ca82d6e5e6e98b6d5051"
+                  },
+                  {
+                      "path":  "results/rerun_s256rgb_seed0.json",
+                      "bytes":  538328,
+                      "sha256":  "6945a3b1f052d9cd68769440c4b3247e9797ffd3254ac7050d7635da42273e12"
+                  },
+                  {
+                      "path":  "results/rerun_seed0.log",
+                      "bytes":  994,
+                      "sha256":  "7d2d9c4c24c2325b28ed1eee964ac9d87c47435e55b2abf78bcfe84e9d890b47"
+                  },
+                  {
+                      "path":  "results/weights.sha256",
+                      "bytes":  267,
+                      "sha256":  "195c8446b354e138982bad355d91c762cf88b84c3193710cf7c0a91d31e9e7bb"
+                  },
+                  {
+                      "path":  "scripts/run_eval.sh",
+                      "bytes":  707,
+                      "sha256":  "7a6029179023b58851d9ee7c5239943632fd9d951a7c98d9162cdd72e83c21ba"
+                  },
+                  {
+                      "path":  "scripts/verify_metrics.py",
+                      "bytes":  3070,
+                      "sha256":  "21790efefec8c73ff2ced309a29859f4045bd3771f3b1343ecc33d2d2f9fe20b"
+                  }
+              ]
+}

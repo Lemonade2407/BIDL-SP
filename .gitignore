@@ -1,0 +1,44 @@
+# ============================================================
+# BIDL-SP .gitignore
+# 数据集、训练数据与训练产物不入库；代码、划分清单、指标 JSON 保留
+# ============================================================
+
+# ---------- 数据集 / 训练数据 ----------
+# BUSI 原始影像与掩膜（约 2 GB）
+transunet/data/Dataset_BUSI_with_GT/
+
+# 平台后续的数据目录
+/data/
+/datasets/
+/training_data/
+/train_data/
+
+# 数据文件；保留 transunet/data/splits/*.json 与 DATASET.md
+transunet/data/**/*.png
+transunet/data/**/*.jpg
+transunet/data/**/*.jpeg
+transunet/data/**/*.bmp
+transunet/data/**/*.tif
+transunet/data/**/*.tiff
+transunet/data/**/*.dcm
+transunet/data/**/*.npy
+transunet/data/**/*.npz
+*.zip
+
+# ---------- 训练产物 / 模型权重 ----------
+# 3 个种子的 TransUNet 权重（约 421 MB/个）
+transunet/results/*.pth
+transunet/results/**/*.pth
+transunet/results/*.pt
+transunet/results/*.ckpt
+transunet/results/ckpt/
+transunet/results/runs/
+/checkpoints/
+/weights/
+*.onnx
+
+# ---------- Python / 运行环境 ----------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
