@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-30",
+  "dataset": "BUSI test split busi_seed0.json (n=116)",
+  "models": [
+    {
+      "id": "mv-transunet-s256rgb-seed0",
+      "name": "transunet",
+      "version": "s256rgb-seed0",
+      "weights_path": "transunet/results/p1_transunet_seed0.pth",
+      "weights_sha256": "8369da0018cf7c6dffc8e3846b5630ad41ff3ade147977f3c90c93d8c2c2637c",
+      "status": "active",
+      "notes": "150 epoch, CE+Dice, zero_head=True; active online model",
+      "config": {
+        "size": 256,
+        "in_ch": 3,
+        "rgb": true,
+        "tta": true,
+        "scales": [1.0],
+        "threshold": 0.5,
+        "postproc": true,
+        "min_area": 0.001,
+        "seed": 0,
+        "transunet_commit": "02ef0010b36eb8328b5e689eadaf613602edf9b8"
+      },
+      "metrics": {
+        "baseline": {
+          "dice": 0.7293,
+          "precision": 0.8216,
+          "recall": 0.8045,
+          "hd95": 90.4,
+          "fg_ratio_normal": 0.00416
+        },
+        "A2+A1": {
+          "dice": 0.724,
+          "precision": 0.8331,
+          "recall": 0.8004,
+          "hd95": 94.8,
+          "fg_ratio_normal": 0.00118,
+          "threshold": 0.5
+        },
+        "A2+A1+A3": {
+          "dice": 0.7318,
+          "precision": 0.7261,
+          "recall": 0.8555,
+          "hd95": 70.6,
+          "fg_ratio_normal": 0.00802,
+          "threshold": 0.15
+        }
+      }
+    },
+    {
+      "id": "mv-transunet-s256rgb-seed1",
+      "name": "transunet",
+      "version": "s256rgb-seed1",
+      "weights_path": "transunet/results/p1_transunet_seed1.pth",
+      "weights_sha256": "efaf740cad7a698d85beeacace4b5ae5d4649d70b1c625397e15ab2637845b1b",
+      "status": "candidate",
+      "notes": "150 epoch, CE+Dice, zero_head=True",
+      "config": {
+        "size": 256,
+        "in_ch": 3,
+        "rgb": true,
+        "tta": true,
+        "scales": [1.0],
+        "threshold": 0.5,
+        "postproc": true,
+        "min_area": 0.001,
+        "seed": 1,
+        "transunet_commit": "02ef0010b36eb8328b5e689eadaf613602edf9b8"
+      },
+      "metrics": {
+        "baseline": {
+          "dice": 0.7096,
+          "precision": 0.8892,
+          "recall": 0.7197,
+          "hd95": 109.6,
+          "fg_ratio_normal": 0.00071
+        },
+        "A2+A1": {
+          "dice": 0.6989,
+          "precision": 0.9027,
+          "recall": 0.7213,
+          "hd95": 119.1,
+          "fg_ratio_normal": 0.00132,
+          "threshold": 0.5
+        },
+        "A2+A1+A3": {
+          "dice": 0.7283,
+          "precision": 0.8455,
+          "recall": 0.781,
+          "hd95": 102.2,
+          "fg_ratio_normal": 0.00267,
+          "threshold": 0.2
+        }
+      }
+    },
+    {
+      "id": "mv-transunet-s256rgb-seed2",
+      "name": "transunet",
+      "version": "s256rgb-seed2",
+      "weights_path": "transunet/results/p1_transunet_seed2.pth",
+      "weights_sha256": "ab03a6d12390dc08711cc60feb9e0542da6ec8ae13532c30200241ddf854f20c",
+      "status": "candidate",
+      "notes": "150 epoch, CE+Dice, zero_head=True",
+      "config": {
+        "size": 256,
+        "in_ch": 3,
+        "rgb": true,
+        "tta": true,
+        "scales": [1.0],
+        "threshold": 0.5,
+        "postproc": true,
+        "min_area": 0.001,
+        "seed": 2,
+        "transunet_commit": "02ef0010b36eb8328b5e689eadaf613602edf9b8"
+      },
+      "metrics": {
+        "baseline": {
+          "dice": 0.6617,
+          "precision": 0.8141,
+          "recall": 0.6974,
+          "hd95": 120.5,
+          "fg_ratio_normal": 0.00608
+        },
+        "A2+A1": {
+          "dice": 0.66,
+          "precision": 0.8633,
+          "recall": 0.6915,
+          "hd95": 132.4,
+          "fg_ratio_normal": 0.00336,
+          "threshold": 0.5
+        },
+        "A2+A1+A3": {
+          "dice": 0.6659,
+          "precision": 0.7972,
+          "recall": 0.7422,
+          "hd95": 116.0,
+          "fg_ratio_normal": 0.00651,
+          "threshold": 0.25
+        }
+      }
+    }
+  ]
+}

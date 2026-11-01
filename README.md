@@ -30,10 +30,11 @@ BIDL-SP 试图解决乳腺影像落地中的四个问题：
 | 接口规范 | 已完成 | [接口规范.md](接口规范.md)，63 个接口 |
 | 分工文档 | 已完成 | [分工.md](分工.md) |
 | 算法复现包 | 已完成 | 代码、冻结划分、指标与核验脚本已入库；BUSI 与 3 个权重因体积不入 Git，见 [transunet/data/DATASET.md](transunet/data/DATASET.md) |
-| 平台代码 | 待实现 | `backend/`、`frontend/`、`algo/`、`deploy/` 按分工文档落地 |
+| 算法服务（成员 B） | 已完成 | `algo/`：模型注册、推理适配、离线评估、Celery Worker、CLI；`python -m algo.cli --help` |
+| 平台代码（后端/前端） | 待实现 | `backend/`、`frontend/`、`deploy/` 按分工文档落地 |
 | 部署编排 | 待实现 | Docker Compose 方案见详细设计第 10 章 |
 
-当前本地工作区可直接复现算法指标；平台代码尚未创建，第 6.2 节的启动命令是交付目标。
+当前本地工作区可直接复现算法指标并运行算法服务；后端与前端尚未创建，第 6.3 节的平台启动命令是交付目标。
 
 ---
 
@@ -107,7 +108,13 @@ BIDL-SP/
 │  ├─ scripts/verify_metrics.py
 │  ├─ env/                    # 环境记录与依赖
 │  └─ TransUNet/              # 官方仓库，commit 02ef001
-└─ backend/ frontend/ algo/ deploy/   # 待实现（目标结构见详细设计 2.4）
+├─ algo/                      # 算法服务（成员 B，已实现）
+│  ├─ adapter/                # registry / predictor / metrics / RLE / config
+│  ├─ worker/                 # Celery tasks + 离线评估适配
+│  ├─ models/registry.json    # 3 个种子、权重 sha256 与指标
+│  ├─ tests/                  # pytest
+│  └─ cli.py                  # 模型/推理/评估/回归命令
+└─ backend/ frontend/ deploy/ # 待实现（目标结构见详细设计 2.4）
 ```
 
 > BUSI 数据与 3 个权重已在本地工作区，但被根目录 `.gitignore` 排除，不随 Git 分发；新环境请按 [transunet/data/DATASET.md](transunet/data/DATASET.md) 放置数据，并从课程提交包/网盘获取权重后放入 `transunet/results/`。
@@ -166,7 +173,34 @@ python -u eval_postproc.py --ckpt ..\results\p1_transunet_seed0.pth `
 
 > `--scales 1.0` 不能改：TransUNet 使用固定位置编码，多尺度 TTA 会破坏位置编码。
 
-### 6.2 启动平台（交付后）
+### 6.2 算法服务 CLI（成员 B，当前可运行）
+
+```powershell
+pip install -r algo/requirements.txt
+
+# 列出注册模型（3 个种子）
+python -m algo.cli models
+
+# 校验 3 个权重的 sha256
+python -m algo.cli verify
+
+# 启用/回滚模型版本（本地 registry.json）
+python -m algo.cli activate --model s256rgb-seed1
+
+# 单图推理：输出 mask / overlay / result.json 到 algo/outputs/
+python -m algo.cli predict `
+  --image "transunet/data/Dataset_BUSI_with_GT/benign/benign (1).png"
+
+# 指标回归：期望 RESULT: PASS，可同时写入证据文件
+python -m algo.cli verify-metrics --output algo/reports/regression.json
+
+# 完整离线评估（CPU 较慢，输出 A2+A1 / A2+A1+A3 并自动比对登记值）
+python -m algo.cli evaluate --model s256rgb-seed0 --device cpu
+```
+
+CLI 输出的 `result` 字段与 [接口规范.md](接口规范.md) 5.5.5 对齐（`mask_rle`、`prob_mean`、`lesion_area_ratio`、`quality_flags`、`elapsed_ms`）。批量/异步调用使用 `algo.worker.tasks:execute_inference`，Celery 启动方式见 6.3。
+
+### 6.3 启动平台（交付后）
 
 前置：Docker 24+、Docker Compose v2，建议 8 vCPU / 16 GB RAM / 50 GB SSD。
 
@@ -185,8 +219,8 @@ cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 
-# 算法 Worker
-celery -A app.tasks worker -Q inference.cpu,eval,default -c 1
+# 算法 Worker（当前仓库可直接运行；Windows 需 -P solo）
+celery -A algo.worker.tasks:app worker -Q inference.cpu,eval,default -c 1 -P solo -l info
 
 # 前端
 cd frontend
@@ -196,7 +230,7 @@ npm run dev
 
 接口文档（开发环境）：`http://localhost:8000/docs`。
 
-> 以上目录与命令为交付目标；当前仓库尚未包含平台代码，落地顺序见 [分工.md](分工.md)。
+> `backend/`、`frontend/`、`deploy/` 为交付目标；`algo/` 已实现并可独立运行，落地顺序见 [分工.md](分工.md)。
 
 ---
 
@@ -257,12 +291,20 @@ npm run dev
 | `MAX_UPLOAD_MB` | 上传大小上限 | `20` |
 | `TRANSUNET_ROOT` | 官方仓库路径 | `/opt/bidl/transunet/TransUNet` |
 | `PYTHONPATH` | 复用 `busi_common` | `/opt/bidl/transunet/code` |
+| `BIDLSP_MODEL_REGISTRY` | 模型注册表路径 | `algo/models/registry.json` |
+| `BIDLSP_ALGO_OUTPUT_DIR` | 推理产物目录 | `algo/outputs` |
 
 ---
 
 ## 11. 测试与验收
 
 ```bash
+# 算法服务单测（当前可运行）
+python -m pytest algo/tests -q
+
+# 慢速一致性测试：适配层输出需与已记录 A2+A1 单图 Dice 一致
+$env:RUN_SLOW_TESTS='1'; python -m pytest algo/tests/test_predictor.py -q
+
 # 算法回归（当前可运行）
 cd transunet && python scripts/verify_metrics.py        # 期望 RESULT: PASS
 
@@ -298,7 +340,7 @@ TransUNet 使用固定位置编码，多尺度输入会破坏位置编码；本�
 测试集只有 20 张正常图，只能作点估计；请引用 3 种子均值与标准差。
 
 **Q5：数据和权重为什么不建议进 Git？**
-BUSI 约 2 GB、单权重约 421 MB。当前课程提交包为便于复现直接包含；正式仓库建议放对象存储/网盘，仓库仅保留 manifest 与 sha256。
+BUSI 约 2 GB、单权重约 421 MB。当前本地工作区为便于复现已包含数据与权重，但根目录 `.gitignore` 已排除，不随 Git 分发；正式仓库建议放对象存储/网盘，仓库仅保留 manifest 与 sha256。
 
 **Q6：TransUNet 可以换版本吗？**
 不可以直接换。权重依赖 commit `02ef0010b36eb8328b5e689eadaf613602edf9b8`，换版本可能导致 `state_dict` 键名不匹配；升级必须重跑指标回归。

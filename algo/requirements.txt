@@ -1,0 +1,4 @@
+-r ../transunet/env/requirements.txt
+celery>=5.4,<6
+redis>=5.0
+pytest>=8.0

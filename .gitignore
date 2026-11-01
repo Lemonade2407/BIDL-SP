@@ -42,3 +42,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# ---------- 算法服务运行产物 ----------
+/algo/outputs/
+.pytest_cache/

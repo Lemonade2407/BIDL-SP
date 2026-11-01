@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "returncode": 0,
+  "elapsed_sec": 0.15,
+  "command": [
+    "C:\\Users\\cr051\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "-u",
+    "scripts/verify_metrics.py"
+  ],
+  "stdout": "variant         Dice   ±std   prec recall    spec  fg_norm    HD95\nbaseline      0.7002 0.0348 0.8416 0.7405 0.98775  0.00365   106.8\nA1_postproc   0.6946 0.0338 0.8609 0.7348 0.98956  0.00297   117.5\nA2_tta        0.7037 0.0322 0.8492 0.7436 0.98837  0.00247   107.5\nA2+A1         0.6943 0.0322 0.8664 0.7377 0.98995  0.00195   115.4\nA2+A1+A3      0.7087 0.0371 0.7896 0.7929 0.98108  0.00573    96.2\n\n与 README 预期值对比：\n  OK   train_baseline_dice        expected 0.7002  actual 0.7000\n  OK   train_baseline_dice_std    expected 0.0348  actual 0.0347\n  OK   A2+A1_dice                 expected 0.6943  actual 0.6943\n  OK   A2+A1_precision            expected 0.8664  actual 0.8664\n  OK   A2+A1_recall               expected 0.7377  actual 0.7377\n  OK   A2+A1_fg_ratio_normal      expected 0.0019  actual 0.0020\n  OK   A2+A1+A3_dice              expected 0.7087  actual 0.7087\n\nsplit: {'train': 546, 'val': 118, 'test': 116}  per_class={'benign': 65, 'malignant': 31, 'normal': 20}\n\nRESULT: PASS\n"
+}
