@@ -1,0 +1,3 @@
+[submodule "transunet/TransUNet"]
+    path = transunet/TransUNet
+    url = https://github.com/Beckschen/TransUNet.git

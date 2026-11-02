@@ -44,12 +44,16 @@ jobs:
         run: |
           python deploy/generate_env.py
           docker compose --env-file deploy/.env -f deploy/docker-compose.yml config --quiet
-      - name: Boot infrastructure, migrations and API
-        run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build --wait api nginx
+      - name: Boot full deployment including algorithm worker
+        run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build --wait
       - name: Verify real PostgreSQL, Redis and private MinIO
         run: |
           curl --fail http://localhost:8080/api/v1/readyz
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:9000/bidlsp-raw/)" = "403"
+      - name: Verify algorithm dependencies and asynchronous import
+        run: |
+          docker compose --env-file deploy/.env -f deploy/docker-compose.yml exec -T worker python -c "import sys; sys.path.insert(0, '/opt/bidl/transunet/TransUNet'); from networks.vit_seg_modeling import VisionTransformer; from algo.adapter.predictor import Predictor; print('Algorithm imports OK')"
+          python backend/scripts/smoke_compose.py
       - if: failure()
         run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs --tail 100
       - if: always()

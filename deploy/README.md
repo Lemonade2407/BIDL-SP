@@ -12,6 +12,8 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml ps
 
 `init` 等待 PostgreSQL/MinIO 健康后执行 Alembic、建私有桶、初始化 admin。`api`、worker 与调度器等待初始化成功。首次 Worker 镜像需下载 PyTorch CPU 包，耗时取决于网络。
 
+MinIO 历史 Docker Hub 镜像已不可公开拉取，因此 `minio.Dockerfile` 从官方发布对应的固定提交 `f19c534b9f457773dcd043d977433e1a71525c3b` 构建，并保留 AGPL 许可证；首次构建还需下载 Go 依赖。Worker 同样拉取固定的 TransUNet `02ef0010b36eb8328b5e689eadaf613602edf9b8`，普通 git clone 未初始化子模块也可以构建。CPU 本地开发应先运行 `git submodule update --init transunet/TransUNet`。
+
 - API 文档：`http://localhost:8080/docs`
 - 就绪检查：`http://localhost:8080/api/v1/readyz`
 - MinIO 控制台：`http://localhost:9001`
