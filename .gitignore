@@ -46,3 +46,12 @@ venv/
 # ---------- 算法服务运行产物 ----------
 /algo/outputs/
 .pytest_cache/
+
+# Member A local configuration, databases and evidence artifacts
+/.runtime/
+**/.env
+*.db
+*.db-wal
+*.db-shm
+.ruff_cache/
+celerybeat-schedule*
