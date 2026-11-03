@@ -1,6 +1,6 @@
 # 成员 A 交付与验收记录
 
-日期：2026-11-02。范围：WP-01/02/03/04/08 后端、WP-10、部署与统计后端。代码在 `feat/member-a-backend` 分支；不修改成员 B 的 `algo/`、`transunet/`，前端仍由成员 C 实现。
+更新日期：2026-11-03。范围：WP-01/02/03/04/08 后端、WP-10、部署与统计后端。代码在 `feat/member-a-backend` 分支；不修改成员 B 的 `algo/`、`transunet/`，前端仍由成员 C 实现。
 
 ## 已交付
 
@@ -22,6 +22,18 @@
 - `python transunet/scripts/verify_metrics.py`：`RESULT: PASS`。这是仓库既有结果文件的数值一致性校验，不是重新运行神经网络。
 - PDF：实测草稿“未签发”水印、正式签发、中文免责声明和内容文本；Poppler 渲染人工检查。正式 Compose 字体嵌入，Windows 使用系统宋体，不提交商业字体。
 - 数据库测试使用实际 Alembic upgrade，不以 create_all 代替迁移。
+
+## GitHub 实际部署验证
+
+[CI run 41573679319](https://github.com/jasonchina0326-pixel/BIDL-SP/actions/runs/41573679319) 于 2026-11-03 通过，代码提交为 `00bb44b02cdb1ea6884f21080736fe1b1c595e7d`。
+
+- SQLite 后端 18 passed；独立 PostgreSQL 16 服务后端 18 passed。
+- Ruff、既有指标一致性核验、Compose 配置检查通过。
+- 从源码构建 MinIO、完整 CPU Worker；全部 Compose 服务启动，初始化和三次迁移成功，readyz 通过。
+- 官方 TransUNet 网络模块和 B 的 Predictor 可导入。
+- 使用合成图像通过真实 API 上传，由 PostgreSQL outbox → Beat/dispatcher → Redis → Worker 完成导入；签名 URL 返回有效 PNG，无签名访问同一对象返回 403。
+
+这一验证不依赖真实权重，不代表医学模型精度、推理耗时或演示机部署已验收。结构化记录见 [CI 证据](evidence/compose-ci.json)。
 
 ## BUSI 实测例外（需 B/指导教师复核）
 
@@ -45,7 +57,7 @@
 | 项目 | 原因与执行方 |
 |---|---|
 | 三份 TransUNet 权重 SHA256、真实单图/评估/P95 | 当前工作区无本项目权重；B 按部署说明导入后执行，禁止用测试替身声称达标 |
-| Docker 本机部署、完整 Worker 镜像启动 | 当前 Windows 无 Docker；GitHub CI 验证 PostgreSQL 迁移与基础服务，C 在演示机验证完整算法 Worker |
+| 演示机 Docker 部署 | 当前 Windows 无 Docker；GitHub CI 已验证完整 Worker 镜像及异步导入，C 仍需在约定演示机验证网络、挂载与真实权重 |
 | 前端 E2E、十张预标注演示、全站免责声明 | C 的前端尚未完成，A 提供真实接口和部署入口 |
 | 1 万条列表性能、10 并发、99% 可用性 | 需在约定演示硬件测量，本次不虚构性能数字 |
 | 备份恢复演练、正式录屏 | 已提供操作说明，需 A/C 在演示环境验证 |

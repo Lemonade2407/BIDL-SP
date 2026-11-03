@@ -21,6 +21,16 @@ MinIO 历史 Docker Hub 镜像已不可公开拉取，因此 `minio.Dockerfile` 
 
 首版服务只绑定本机。局域网演示时同时调整 Nginx/MinIO 端口绑定、`MINIO_PUBLIC_ENDPOINT` 和 `CORS_ORIGINS`，MinIO 签名 URL 必须使用浏览器可达的地址。外网部署应在入口加 HTTPS；不要公开 PostgreSQL/Redis 端口。Nginx 后的 API 不信任客户端转发 IP，因此登录限流按直接连接地址保守计数；如果部署可信代理 IP 白名单，再配置 Uvicorn proxy headers。
 
+## 部署冒烟检查
+
+在全新测试环境启动全部服务后，安装 `backend/requirements-dev.txt` 并执行：
+
+```bash
+python backend/scripts/smoke_compose.py
+```
+
+脚本从本机 `.env` 读取管理员密码，创建 `compose-smoke` 数据集并上传合成 PNG，等待 Beat → dispatcher → Redis → Worker 完成异步导入，验证 MinIO 签名下载成功且匿名下载被拒绝。它会写入测试数据，应在独立测试环境执行；不验证模型精度或真实医学推理。GitHub CI 同时构建完整 Worker 并检查官方 TransUNet 网络模块能够导入。
+
 ## 演示初始化
 
 ```bash
