@@ -1,0 +1,11 @@
+.git
+.venv
+.runtime
+**/__pycache__
+**/.pytest_cache
+**/.env
+**/*.pth
+**/*.pt
+transunet/data/Dataset_BUSI_with_GT
+backend/tests
+docs

@@ -1,0 +1,22 @@
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="18" time="31.950" timestamp="2026-11-02T15:55:08.778697+08:00">
+    <testcase classname="backend.tests.test_platform" name="test_openapi_matches_all_63_contract_endpoints" time="1.579" />
+    <testcase classname="backend.tests.test_platform" name="test_auth_rbac_logout_password_and_last_admin" time="1.984" />
+    <testcase classname="backend.tests.test_platform" name="test_rate_limits_validation_and_health" time="1.499" />
+    <testcase classname="backend.tests.test_platform" name="test_import_idempotency_dedupe_zip_safety_and_permissions" time="2.175" />
+    <testcase classname="backend.tests.test_platform" name="test_freeze_manifest_and_database_immutability" time="1.924" />
+    <testcase classname="backend.tests.test_platform" name="test_request_size_limit" time="1.586" />
+    <testcase classname="backend.tests.test_platform" name="test_annotation_claim_versions_rejection_and_unique_approval" time="1.917" />
+    <testcase classname="backend.tests.test_platform" name="test_inference_screen_report_full_flow" time="2.180" />
+    <testcase classname="backend.tests.test_platform" name="test_template_sandbox" time="1.509" />
+    <testcase classname="backend.tests.test_platform" name="test_worker_failure_is_persisted" time="1.896" />
+    <testcase classname="backend.tests.test_platform" name="test_five_role_read_matrix[admin-allowed0]" time="1.628" />
+    <testcase classname="backend.tests.test_platform" name="test_five_role_read_matrix[data_engineer-allowed1]" time="1.484" />
+    <testcase classname="backend.tests.test_platform" name="test_five_role_read_matrix[annotator-allowed2]" time="1.513" />
+    <testcase classname="backend.tests.test_platform" name="test_five_role_read_matrix[screener-allowed3]" time="1.532" />
+    <testcase classname="backend.tests.test_platform" name="test_five_role_read_matrix[reviewer-allowed4]" time="1.485" />
+    <testcase classname="backend.tests.test_platform" name="test_claim_race_only_one_winner" time="1.893" />
+    <testcase classname="backend.tests.test_platform" name="test_rle_validation_and_signed_url_token_separation" time="2.069" />
+    <testcase classname="backend.tests.test_platform" name="test_duplicate_class_conflict_is_visible" time="1.702" />
+  </testsuite>
+</testsuites>

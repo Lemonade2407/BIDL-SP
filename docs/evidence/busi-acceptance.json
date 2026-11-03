@@ -1,0 +1,45 @@
+{
+  "dataset": "BUSI",
+  "image_count": 779,
+  "by_class": {
+    "benign": 437,
+    "malignant": 209,
+    "normal": 133
+  },
+  "import": {
+    "success": 779,
+    "failed": 0,
+    "duplicate": 1,
+    "report": {
+      "failures": [],
+      "warnings": [
+        {
+          "file": "malignant/malignant (145).png",
+          "relative_path": "malignant/malignant (145).png",
+          "reason": "DUPLICATE_IMAGE",
+          "duplicate_of": "benign/benign (433).png",
+          "sha256": "058e7538fa53b2bd8b87500ff47721c84ec442dc964d9de21bb271a8651138a8",
+          "class_conflict": true
+        }
+      ]
+    }
+  },
+  "split_counts": {
+    "train": 545,
+    "val": 118,
+    "test": 116
+  },
+  "effective_seed": 42,
+  "frozen_members_match_reference": true,
+  "sha256_unique": true,
+  "excluded_duplicates": [
+    "malignant/malignant (145).png"
+  ],
+  "original_780_requirement_met": false,
+  "repeat_import": {
+    "success": 0,
+    "duplicate": 780,
+    "failed": 0
+  },
+  "result": "PASS_WITH_DATA_QUALITY_EXCEPTION"
+}

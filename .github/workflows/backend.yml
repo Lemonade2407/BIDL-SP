@@ -1,0 +1,60 @@
+name: Backend A
+on:
+  push:
+    branches: ['feat/**', dev, master, main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  postgres-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bidl
+          POSTGRES_PASSWORD: isolated-test-only
+          POSTGRES_DB: bidlsp_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U bidl -d bidlsp_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install -r backend/requirements-dev.txt
+      - run: pytest backend/tests -q
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://bidl:isolated-test-only@localhost:5432/bidlsp_test
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: pip install -r backend/requirements-dev.txt
+      - run: ruff check backend/app backend/tests --select E9,F63,F7,F82
+      - run: pytest backend/tests -q
+      - run: python transunet/scripts/verify_metrics.py
+      - name: Validate deployment configuration
+        run: |
+          python deploy/generate_env.py
+          docker compose --env-file deploy/.env -f deploy/docker-compose.yml config --quiet
+      - name: Boot full deployment including algorithm worker
+        run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build --wait
+      - name: Verify real PostgreSQL, Redis and private MinIO
+        run: |
+          curl --fail http://localhost:8080/api/v1/readyz
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:9000/bidlsp-raw/)" = "403"
+      - name: Verify algorithm dependencies and asynchronous import
+        run: |
+          docker compose --env-file deploy/.env -f deploy/docker-compose.yml exec -T worker python -c "import sys; sys.path.insert(0, '/opt/bidl/transunet/TransUNet'); from networks.vit_seg_modeling import VisionTransformer; from algo.adapter.predictor import Predictor; print('Algorithm imports OK')"
+          python backend/scripts/smoke_compose.py
+      - if: failure()
+        run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs --tail 100
+      - if: always()
+        run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml down -v
