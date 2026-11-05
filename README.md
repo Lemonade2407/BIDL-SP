@@ -31,10 +31,11 @@ BIDL-SP 试图解决乳腺影像落地中的四个问题：
 | 分工文档 | 已完成 | [分工.md](分工.md) |
 | 算法复现包 | 已完成 | 代码、冻结划分、指标与核验脚本已入库；BUSI 与 3 个权重因体积不入 Git，见 [transunet/data/DATASET.md](transunet/data/DATASET.md) |
 | 算法服务（成员 B） | 已完成 | `algo/`：模型注册、推理适配、离线评估、Celery Worker、CLI；`python -m algo.cli --help` |
-| 平台代码（后端/前端） | 待实现 | `backend/`、`frontend/`、`deploy/` 按分工文档落地 |
-| 部署编排 | 待实现 | Docker Compose 方案见详细设计第 10 章 |
+| 平台后端（成员 A） | 已实现，待交叉验收 | `backend/`：63 个 API、数据库迁移、数据湖、标注/筛查/报告、JWT/RBAC、审计、Worker 对接 |
+| 平台前端（成员 C） | 待实现 | `frontend/`；当前 deploy/html 为后端交接入口 |
+| 部署编排 | 已提供 | `deploy/`：Compose、初始化、健康检查、Nginx；见 [部署说明](deploy/README.md) |
 
-当前本地工作区可直接复现算法指标并运行算法服务；后端与前端尚未创建，第 6.3 节的平台启动命令是交付目标。
+成员 A 后端已实现，启动与测试见 [backend/README.md](backend/README.md)，贡献和验收例外见 [docs/A交付与验收.md](docs/A交付与验收.md)。真实 BUSI 严格去重为 779 张，原文 780 张验收目标存在跨类别重复冲突；详见验收证据。真实权重仍需另外提供。
 
 ---
 
@@ -114,7 +115,9 @@ BIDL-SP/
 │  ├─ models/registry.json    # 3 个种子、权重 sha256 与指标
 │  ├─ tests/                  # pytest
 │  └─ cli.py                  # 模型/推理/评估/回归命令
-└─ backend/ frontend/ deploy/ # 待实现（目标结构见详细设计 2.4）
+├─ backend/                  # 成员 A：API、迁移、测试、验收脚本
+├─ deploy/                   # 成员 A：Compose、Nginx、初始化和运维
+└─ frontend/                 # 成员 C：待实现
 ```
 
 > BUSI 数据与 3 个权重已在本地工作区，但被根目录 `.gitignore` 排除，不随 Git 分发；新环境请按 [transunet/data/DATASET.md](transunet/data/DATASET.md) 放置数据，并从课程提交包/网盘获取权重后放入 `transunet/results/`。
@@ -200,15 +203,14 @@ python -m algo.cli evaluate --model s256rgb-seed0 --device cpu
 
 CLI 输出的 `result` 字段与 [接口规范.md](接口规范.md) 5.5.5 对齐（`mask_rle`、`prob_mean`、`lesion_area_ratio`、`quality_flags`、`elapsed_ms`）。批量/异步调用使用 `algo.worker.tasks:execute_inference`，Celery 启动方式见 6.3。
 
-### 6.3 启动平台（交付后）
+### 6.3 启动平台（成员 A 后端）
 
 前置：Docker 24+、Docker Compose v2，建议 8 vCPU / 16 GB RAM / 50 GB SSD。
 
 ```bash
-cp deploy/.env.example deploy/.env      # 填写数据库、MinIO、JWT 密钥
-docker compose -f deploy/docker-compose.yml up -d
-docker compose exec api alembic upgrade head
-docker compose exec api python -m app.cli seed-admin
+python deploy/generate_env.py
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
+# init 服务自动完成迁移、私有桶和 admin 初始化；密码见本地 deploy/.env
 ```
 
 本地开发：
@@ -230,7 +232,7 @@ npm run dev
 
 接口文档（开发环境）：`http://localhost:8000/docs`。
 
-> `backend/`、`frontend/`、`deploy/` 为交付目标；`algo/` 已实现并可独立运行，落地顺序见 [分工.md](分工.md)。
+> 后端本地开发请完整执行 [backend/README.md](backend/README.md) 的环境配置和迁移；平台 Worker 用 `celery -A app.worker:app worker -Q default,inference.cpu,eval -c 1`，配合 Beat/dispatcher；B 的独立 CLI Worker 不负责平台数据库回写。`frontend/` 尚待 C 完成。
 
 ---
 
@@ -372,3 +374,11 @@ BUSI 约 2 GB、单权重约 421 MB。当前本地工作区为便于复现已包
 - BUSI 数据集作者与公开镜像维护者。
 - TransUNet 官方仓库（Beckschen/TransUNet）。
 - 课程指导教师与评审人。
+
+
+### 成员 A 交付入口
+
+- [后端运行与接口说明](backend/README.md)
+- [部署、初始化、备份和 B/C 交接](deploy/README.md)
+- [A 的任务完成情况与验收限制](docs/A交付与验收.md)
+- [真实 BUSI 导入与冻结证据](docs/evidence/busi-acceptance.json)
