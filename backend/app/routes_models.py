@@ -64,22 +64,23 @@ def models(request: Request, db=Depends(get_db, scope="function"), user=Depends(
     stmt = select(m.Model)
     if request.query_params.get("task"):
         stmt = stmt.where(m.Model.task == request.query_params["task"])
-    return page(
-        request,
-        db,
-        stmt,
-        m.Model,
-        lambda x: {
-            **serialize(x),
-            "active_version": serialize(
-                db.scalar(
-                    select(m.ModelVersion).where(
-                        m.ModelVersion.model_id == x.id, m.ModelVersion.status == "active"
-                    )
-                )
-            ),
-        },
-    )
+
+    def model_json(model):
+        versions = list(
+            db.scalars(
+                select(m.ModelVersion)
+                .where(m.ModelVersion.model_id == model.id)
+                .order_by(m.ModelVersion.created_at)
+            )
+        )
+        active = next((item for item in versions if item.status == "active"), None)
+        return {
+            **serialize(model),
+            "active_version": serialize(active),
+            "versions": [serialize(item) for item in versions],
+        }
+
+    return page(request, db, stmt, m.Model, model_json)
 
 
 @router.post("/models", status_code=201)

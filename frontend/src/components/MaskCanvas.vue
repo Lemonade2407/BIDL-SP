@@ -27,16 +27,56 @@ const redoStack = ref<Uint8Array[]>([])
 const drawing = ref(false)
 const points = ref<{ x: number; y: number }[]>([])
 
+// 离屏掩膜画布：绘制时只做一次 drawImage，避免每次移动遍历整张影像。
+let maskCanvas: HTMLCanvasElement | null = null
+let maskCtx: CanvasRenderingContext2D | null = null
+let lastPoint: { x: number; y: number } | null = null
+// 父组件回传自己刚 emit 的值时不要重建掩膜，否则撤销栈会被清空。
+let lastEmitted: RleMask | null = null
+
+function maskSurface() {
+  if (!maskCanvas) maskCanvas = document.createElement('canvas')
+  if (maskCanvas.width !== props.imageWidth || maskCanvas.height !== props.imageHeight) {
+    maskCanvas.width = props.imageWidth
+    maskCanvas.height = props.imageHeight
+    maskCtx = maskCanvas.getContext('2d')
+  }
+  if (!maskCtx) maskCtx = maskCanvas.getContext('2d')
+  return maskCtx!
+}
+
+function renderMask() {
+  const ctx = maskSurface()
+  const w = props.imageWidth
+  const h = props.imageHeight
+  const data = ctx.createImageData(w, h)
+  const pixels = data.data
+  for (let i = 0; i < mask.value.length; i++) {
+    if (!mask.value[i]) continue
+    const offset = i * 4
+    pixels[offset] = 244
+    pixels[offset + 1] = 67
+    pixels[offset + 2] = 54
+    pixels[offset + 3] = 255
+  }
+  ctx.putImageData(data, 0, 0)
+}
+
 function syncFromModel() {
   mask.value = props.modelValue ? decodeRle(props.modelValue) : emptyMask(props.imageHeight, props.imageWidth)
   undoStack.value = []
   redoStack.value = []
+  renderMask()
   draw()
 }
 
 function emitMask() {
   const hasFg = mask.value.some((v) => v === 1)
-  emit('update:modelValue', hasFg ? { size: [props.imageHeight, props.imageWidth], counts: encodeRle(mask.value, props.imageHeight, props.imageWidth) } : null)
+  const value = hasFg
+    ? { size: [props.imageHeight, props.imageWidth] as [number, number], counts: encodeRle(mask.value, props.imageHeight, props.imageWidth) }
+    : null
+  lastEmitted = value
+  emit('update:modelValue', value)
 }
 
 function snapshot() {
@@ -63,12 +103,10 @@ function draw() {
   ctx.translate(props.view.tx, props.view.ty)
   ctx.scale(props.view.scale, props.view.scale)
   ctx.imageSmoothingEnabled = false
-  const px = Math.max(1, 1 / props.view.scale)
-  ctx.fillStyle = 'rgba(244, 67, 54, 0.45)'
-  for (let y = 0; y < props.imageHeight; y++) {
-    for (let x = 0; x < props.imageWidth; x++) {
-      if (mask.value[y * props.imageWidth + x]) ctx.fillRect(x, y, px, px)
-    }
+  if (maskCanvas) {
+    ctx.globalAlpha = 0.45
+    ctx.drawImage(maskCanvas, 0, 0, props.imageWidth, props.imageHeight)
+    ctx.globalAlpha = 1
   }
   // 多边形预览
   if (points.value.length) {
@@ -89,55 +127,89 @@ function draw() {
   ctx.restore()
 }
 
-function toImage(e: MouseEvent): { x: number; y: number } {
+function toImage(e: { clientX: number; clientY: number }): { x: number; y: number } {
   const rect = canvasRef.value!.getBoundingClientRect()
   const sx = e.clientX - rect.left
   const sy = e.clientY - rect.top
-  return { x: Math.floor((sx - props.view.tx) / props.view.scale), y: Math.floor((sy - props.view.ty) / props.view.scale) }
+  return {
+    x: Math.floor((sx - props.view.tx) / props.view.scale),
+    y: Math.floor((sy - props.view.ty) / props.view.scale)
+  }
 }
 
 function paintAt(x: number, y: number) {
-  const r = props.brushSize
-  const v = props.tool === 'eraser' ? 0 : 1
-  for (let dy = -r; dy <= r; dy++) {
-    for (let dx = -r; dx <= r; dx++) {
-      if (dx * dx + dy * dy > r * r) continue
+  const radius = props.brushSize
+  const eraser = props.tool === 'eraser'
+  const ctx = maskSurface()
+  ctx.save()
+  ctx.globalCompositeOperation = eraser ? 'destination-out' : 'source-over'
+  ctx.fillStyle = '#f44336'
+  ctx.beginPath()
+  ctx.arc(x + 0.5, y + 0.5, radius, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+  const value = eraser ? 0 : 1
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (dx * dx + dy * dy > radius * radius) continue
       const px = x + dx
       const py = y + dy
       if (px < 0 || py < 0 || px >= props.imageWidth || py >= props.imageHeight) continue
-      mask.value[py * props.imageWidth + px] = v
+      mask.value[py * props.imageWidth + px] = value
     }
   }
 }
 
-function onDown(e: MouseEvent) {
+// 快速拖动时按笔刷半径插值，避免出现断点。
+function paintLine(from: { x: number; y: number }, to: { x: number; y: number }) {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const distance = Math.hypot(dx, dy)
+  const steps = Math.max(1, Math.ceil(distance / Math.max(1, props.brushSize / 2)))
+  for (let i = 1; i <= steps; i++) {
+    paintAt(Math.round(from.x + (dx * i) / steps), Math.round(from.y + (dy * i) / steps))
+  }
+}
+
+function onPointerDown(e: PointerEvent) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  canvasRef.value?.setPointerCapture?.(e.pointerId)
   if (props.tool === 'polygon') {
-    const p = toImage(e)
-    points.value.push(p)
+    points.value.push(toImage(e))
     draw()
     return
   }
   drawing.value = true
   snapshot()
   const p = toImage(e)
+  lastPoint = p
   paintAt(p.x, p.y)
   draw()
 }
 
-function onMove(e: MouseEvent) {
-  if (props.tool !== 'polygon' && drawing.value) {
-    const p = toImage(e)
-    paintAt(p.x, p.y)
-    draw()
-  }
+function onPointerMove(e: PointerEvent) {
+  if (!drawing.value || props.tool === 'polygon') return
+  const p = toImage(e)
+  if (lastPoint) paintLine(lastPoint, p)
+  else paintAt(p.x, p.y)
+  lastPoint = p
+  draw()
 }
 
-function onUp() {
-  if (drawing.value) {
-    drawing.value = false
-    emitMask()
-    emit('changed')
-  }
+function finishStroke(e?: PointerEvent) {
+  if (e) canvasRef.value?.releasePointerCapture?.(e.pointerId)
+  if (!drawing.value) return
+  drawing.value = false
+  lastPoint = null
+  emitMask()
+  emit('changed')
+}
+
+function onPointerLeave(e: PointerEvent) {
+  // 指针捕获成功时继续接收 move/up，不提前结束笔画。
+  if (canvasRef.value?.hasPointerCapture?.(e.pointerId)) return
+  finishStroke()
 }
 
 function closePolygon() {
@@ -149,6 +221,7 @@ function closePolygon() {
   snapshot()
   fillPolygon(mask.value, props.imageWidth, props.imageHeight, points.value.map((p) => [p.x, p.y]))
   points.value = []
+  renderMask()
   emitMask()
   emit('changed')
   draw()
@@ -179,6 +252,7 @@ function undo() {
   if (!undoStack.value.length) return
   redoStack.value.push(mask.value.slice())
   mask.value = undoStack.value.pop()!
+  renderMask()
   emitMask()
   emit('changed')
   draw()
@@ -188,6 +262,7 @@ function redo() {
   if (!redoStack.value.length) return
   undoStack.value.push(mask.value.slice())
   mask.value = redoStack.value.pop()!
+  renderMask()
   emitMask()
   emit('changed')
   draw()
@@ -197,14 +272,19 @@ function clear() {
   snapshot()
   mask.value = emptyMask(props.imageHeight, props.imageWidth)
   points.value = []
+  renderMask()
   emitMask()
   emit('changed')
   draw()
 }
 
-watch(() => props.modelValue, () => {
-  if (!drawing.value) syncFromModel()
-})
+watch(
+  () => props.modelValue,
+  (value) => {
+    if (drawing.value || value === lastEmitted) return
+    syncFromModel()
+  }
+)
 
 watch(() => [props.view.scale, props.view.tx, props.view.ty], () => draw())
 
@@ -218,10 +298,12 @@ defineExpose({ undo, redo, clear, closePolygon })
     ref="canvasRef"
     class="mask-canvas"
     style="width: 100%; height: 100%"
-    @mousedown="onDown"
-    @mousemove="onMove"
-    @mouseup="onUp"
-    @mouseleave="onUp"
+    @pointerdown.prevent="onPointerDown"
+    @pointermove="onPointerMove"
+    @pointerup="finishStroke"
+    @pointercancel="finishStroke"
+    @pointerleave="onPointerLeave"
+    @contextmenu.prevent
     @dblclick="tool === 'polygon' && closePolygon()"
   ></canvas>
 </template>
@@ -231,5 +313,7 @@ defineExpose({ undo, redo, clear, closePolygon })
   position: absolute;
   inset: 0;
   cursor: crosshair;
+  touch-action: none;
+  user-select: none;
 }
 </style>

@@ -1,9 +1,7 @@
-"""Administrator commands; passwords come from prompt/environment, never CLI args."""
+"""Administrator commands; demo accounts use a fixed password, production can rotate later."""
 
 import argparse
-import getpass
 import json
-import os
 import tempfile
 import zipfile
 from pathlib import Path
@@ -12,7 +10,7 @@ from sqlalchemy import select
 
 from . import models as m
 from .common import audit, get
-from .config import ROOT, settings
+from .config import DEMO_ADMIN_USERNAME, DEMO_PASSWORD, ROOT, settings
 from .data_service import import_archive
 from .db import SessionLocal, uid
 from .reports import DEFAULT_TEMPLATE, VARIABLES
@@ -23,14 +21,22 @@ from .storage import storage
 def seed_admin(db, password, demo=False):
     if len(password) < 12:
         raise ValueError("管理员/演示密码至少 12 字符")
-    for role in ["admin", "data_engineer", "annotator", "screener", "reviewer"] if demo else ["admin"]:
-        if not db.scalar(select(m.User).where(m.User.username == role)):
+    roles = ["admin", "data_engineer", "annotator", "screener", "reviewer"] if demo else [DEMO_ADMIN_USERNAME]
+    for role in roles:
+        obj = db.scalar(select(m.User).where(m.User.username == role))
+        if obj is None:
             obj = m.User(
                 username=role, display_name=role, roles=[role], password_hash=hash_password(password)
             )
             db.add(obj)
             db.flush()
             audit(db, obj, "user.seed", obj)
+        else:
+            # 演示环境固定密码，重复初始化时同步重置。
+            obj.password_hash = hash_password(password)
+            obj.status = "active"
+            obj.token_version += 1
+            db.flush()
     if not db.scalar(select(m.ReportTemplate.id).where(m.ReportTemplate.name == "默认科研筛查报告")):
         db.add(m.ReportTemplate(name="默认科研筛查报告", body=DEFAULT_TEMPLATE, variables=sorted(VARIABLES)))
     db.commit()
@@ -61,9 +67,8 @@ def main():
         return
     with SessionLocal() as db:
         if args.command.startswith("seed-") and args.command != "seed-models":
-            password = os.environ.get("ADMIN_PASSWORD") or getpass.getpass("初始化密码（至少12字符）：")
-            seed_admin(db, password, demo=args.command == "seed-demo")
-            print("Accounts initialized; existing passwords unchanged.")
+            seed_admin(db, DEMO_PASSWORD, demo=args.command == "seed-demo")
+            print(f"Accounts initialized; fixed demo password is {DEMO_PASSWORD}.")
             return
         user = db.scalar(select(m.User).where(m.User.username == "admin"))
         if not user:

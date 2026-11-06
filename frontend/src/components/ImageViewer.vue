@@ -8,6 +8,26 @@ const emit = defineEmits<{ (e: 'viewport', v: { scale: number; tx: number; ty: n
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const dragging = ref(false)
 const last = reactive({ x: 0, y: 0 })
+let bitmap: HTMLImageElement | null = null
+
+function loadBitmap() {
+  const url = props.image?.preview_url || props.image?.thumbnail_url
+  if (!url) {
+    bitmap = null
+    draw()
+    return
+  }
+  const image = new Image()
+  image.onload = () => {
+    bitmap = image
+    draw()
+  }
+  image.onerror = () => {
+    bitmap = null
+    draw()
+  }
+  image.src = url
+}
 
 function fitScale() {
   if (!canvasRef.value || !props.image) return
@@ -34,7 +54,11 @@ function draw() {
   ctx.save()
   ctx.translate(props.view.tx, props.view.ty)
   ctx.scale(props.view.scale, props.view.scale)
-  drawPlaceholder(ctx, props.image)
+  if (bitmap) {
+    ctx.drawImage(bitmap, 0, 0, props.image.width, props.image.height)
+  } else {
+    drawPlaceholder(ctx, props.image)
+  }
   ctx.restore()
 }
 
@@ -131,9 +155,10 @@ function resetView() {
 }
 
 onMounted(() => {
+  loadBitmap()
   resetView()
 })
-watch(() => props.image, () => { resetView() }, { deep: true })
+watch(() => props.image, () => { loadBitmap(); resetView() }, { deep: true })
 defineExpose({ resetView, draw })
 </script>
 

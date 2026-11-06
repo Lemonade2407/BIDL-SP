@@ -1,0 +1,92 @@
+{
+  "date": "2026-11-05",
+  "mode": "uvicorn 真实 HTTP + SQLite + 本地对象存储 + seed0 真实权重",
+  "script": "backend/scripts/e2e_local.py",
+  "result": "PASS",
+  "duration_seconds": 75.7,
+  "image_source": "real BUSI",
+  "flow": [
+    "login / RBAC",
+    "create dataset",
+    "upload ZIP with reference masks",
+    "outbox import via dispatch-once",
+    "annotation claim / reject / approve",
+    "freeze dataset version + manifest",
+    "register and activate seed0 model",
+    "patient / study / screen task",
+    "real CPU inference",
+    "study review accept",
+    "draft / submit / sign report",
+    "PDF + stats + audit"
+  ],
+  "dataset": {
+    "images": 9,
+    "splits": {
+      "train": 3,
+      "val": 3,
+      "test": 3
+    },
+    "manifest_items": 9
+  },
+  "model": {
+    "version": "s256rgb-seed0",
+    "active": true,
+    "versions_listed": 1
+  },
+  "inference": {
+    "status": "succeeded",
+    "elapsed_ms": 1436,
+    "lesion_area_ratio": 0.029423,
+    "quality_flags": [
+      "LOW_CONFIDENCE"
+    ],
+    "mask_size": [
+      471,
+      558
+    ]
+  },
+  "report": {
+    "status": "signed",
+    "pdf_bytes": 40044
+  },
+  "stats": {
+    "images": 9,
+    "annotations_approved": 9,
+    "dataset_versions": 1,
+    "model_versions": 1,
+    "screen_tasks": 1,
+    "reports_signed": 1,
+    "positive_rate": 1.0,
+    "avg_review_seconds": 27.984075,
+    "definition": "按任务创建时间过滤；每检查最新复核接受/修改且最终掩膜非空计为参考阳性；非诊断结论。复核时长=完成时间-领取时间。"
+  },
+  "audit_actions": [
+    "annotation.claim",
+    "annotation.review",
+    "annotation.save",
+    "annotation.submit",
+    "annotation.task.create",
+    "auth.login",
+    "data.export",
+    "data.import",
+    "data.import.finish",
+    "dataset.create",
+    "dataset.freeze",
+    "dataset.version.create",
+    "inference.create",
+    "inference.finish",
+    "model.activate",
+    "model.create",
+    "model.version.create",
+    "patient.create",
+    "report.export",
+    "report.save",
+    "report.sign",
+    "report.submit",
+    "screen.claim",
+    "screen.task.create",
+    "study.created",
+    "study.review",
+    "user.seed"
+  ]
+}

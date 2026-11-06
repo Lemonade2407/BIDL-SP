@@ -1,7 +1,7 @@
 # TransUNet + CE+Dice + A2+A1 —— 训练好模型的使用包
 
 目标只有一个：**用现成的权重跑通「看图 → 出掩膜」的完整推理链路**，并保证结果可核对。
-训练相关脚本已移出（需要重训时见 [checkpoints/README.md](checkpoints/README.md) 里的命令）。
+训练相关脚本已移出（需要重训时见 [code/train_supervised.py](code/train_supervised.py) 里的命令）。
 
 ---
 
@@ -88,7 +88,7 @@ sd=sd.get('state_dict', sd); print(m.load_state_dict(sd, strict=False)[:2])"
 ```
 
 说明：文件内容是**裸 `state_dict`**（无 `model/size/loss` 元数据），`eval_postproc.py` 两种格式都兼容。
-sha256 见 `results/weights.sha256`；身份细节见 [checkpoints/README.md](checkpoints/README.md)。
+sha256 见 `results/weights.sha256`；身份细节见 [MANIFEST.json](MANIFEST.json)。
 
 ---
 

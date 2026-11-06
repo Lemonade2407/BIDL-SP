@@ -9,11 +9,11 @@ values = {
     "MINIO_ROOT_USER": "bidlsp",
     "MINIO_ROOT_PASSWORD": secrets.token_urlsafe(24),
     "JWT_SECRET": secrets.token_urlsafe(48),
-    "ADMIN_PASSWORD": secrets.token_urlsafe(18),
+    "STORAGE_BACKEND": "local",
     "MINIO_PUBLIC_ENDPOINT": "localhost:9000",
     "PUBLIC_API_URL": "http://localhost:8080",
     "CORS_ORIGINS": '["http://localhost:5173"]',
 }
 with target.open("x", encoding="utf-8") as stream:
     stream.write("\n".join(f"{key}={value}" for key, value in values.items()) + "\n")
-print(f"Created {target}; inspect ADMIN_PASSWORD locally. Existing files are never overwritten.")
+print(f"Created {target}; admin demo login is admin / DemoPassword!123. Existing files are never overwritten.")

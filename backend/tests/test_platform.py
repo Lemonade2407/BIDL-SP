@@ -22,15 +22,15 @@ def post(client, path, headers, payload=None, status=200):
     return response.json()["data"] if response.content else None
 
 
-def test_openapi_matches_all_63_contract_endpoints():
+def test_openapi_matches_all_64_contract_endpoints():
     contract = (ROOT / "接口规范.md").read_text(encoding="utf-8")
     expected = re.findall(r"\| \d{3} \| (GET|POST|PATCH) \| `([^`]+)`", contract)
     actual = app.openapi()["paths"]
-    assert len(expected) == 63
+    assert len(expected) == 64
     for method, path in expected:
         assert method.lower() in actual["/api/v1" + path], path
     assert (
-        len([(p, v) for p, methods in actual.items() for v in methods if v in {"get", "post", "patch"}]) == 63
+        len([(p, v) for p, methods in actual.items() for v in methods if v in {"get", "post", "patch"}]) == 64
     )
 
 
@@ -62,6 +62,24 @@ def test_auth_rbac_logout_password_and_last_admin(client, headers):
         204,
     )
     assert client.get("/api/v1/auth/me", headers=headers["screener"]).status_code == 401
+
+
+def test_registration_requires_admin_activation(client, headers):
+    payload = {"username": "newdoctor", "display_name": "新医生", "password": "Register!123"}
+    created = post(client, "/auth/register", {}, payload, 201)
+    assert created["status"] == "disabled"
+    login = {"username": "newdoctor", "password": "Register!123"}
+    assert client.post("/api/v1/auth/login", json=login).status_code == 401
+    assert client.post("/api/v1/auth/register", json=payload).status_code == 409
+    assert (
+        client.patch(
+            "/api/v1/users/" + created["id"], headers=headers["admin"], json={"status": "active"}
+        ).status_code
+        == 200
+    )
+    approved = client.post("/api/v1/auth/login", json=login)
+    assert approved.status_code == 200
+    assert approved.json()["data"]["user"]["roles"] == ["screener"]
 
 
 def test_rate_limits_validation_and_health(client):
@@ -260,6 +278,9 @@ def test_inference_screen_report_full_flow(client, headers, imported, monkeypatc
     )
     version = post(client, f"/models/{model['id']}/versions", h, payload, 201)
     post(client, f"/model-versions/{version['id']}/activate", h)
+    listed = client.get("/api/v1/models", headers=h).json()["data"]
+    assert any(item["id"] == version["id"] for item in listed[0]["versions"])
+    assert listed[0]["active_version"]["id"] == version["id"]
 
     def fake_prediction(db, task):
         path = settings.work_dir / task.id / "mask.png"

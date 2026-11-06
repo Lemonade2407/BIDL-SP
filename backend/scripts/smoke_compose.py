@@ -1,29 +1,24 @@
 """Exercise the running Compose deployment with synthetic, non-clinical data.
 
-Requires development dependencies. Uses the generated deploy/.env password locally
-without printing credentials. Beat, dispatcher and worker must process the outbox;
-this script never executes jobs eagerly or calls dispatch directly.
+Requires development dependencies. Uses the fixed demo admin account. Beat,
+dispatcher and worker must process the outbox; this script never executes jobs
+eagerly or calls dispatch directly.
 """
 
 import io
 import time
 import zipfile
-from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from PIL import Image
 
+DEMO_ADMIN = {"username": "admin", "password": "DemoPassword!123"}
+
 
 def main():
-    root = Path(__file__).resolve().parents[2]
-    env = dict(
-        line.split("=", 1)
-        for line in (root / "deploy/.env").read_text().splitlines()
-        if line and not line.startswith("#") and "=" in line
-    )
     with httpx.Client(base_url="http://localhost:8080/api/v1", timeout=20) as api:
-        response = api.post("/auth/login", json={"username": "admin", "password": env["ADMIN_PASSWORD"]})
+        response = api.post("/auth/login", json=DEMO_ADMIN)
         response.raise_for_status()
         api.headers["Authorization"] = "Bearer " + response.json()["data"]["access_token"]
         response = api.post("/datasets", json={"name": "compose-smoke"})

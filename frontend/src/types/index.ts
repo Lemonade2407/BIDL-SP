@@ -86,6 +86,7 @@ export interface Image {
   mask_available: boolean
   annotation_status?: AnnotationStatus | null
   thumbnail_url?: string | null
+  preview_url?: string | null
   created_at?: string
 }
 
@@ -169,6 +170,16 @@ export interface ModelVersion {
   created_at?: string
 }
 
+export interface Model {
+  id: string
+  name: string
+  task?: string
+  framework?: string
+  active_version?: ModelVersion | null
+  versions?: ModelVersion[]
+  created_at?: string
+}
+
 export interface InferenceResult {
   mask_url?: string | null
   mask_rle: RleMask | null
@@ -192,10 +203,10 @@ export interface InferenceTask {
 
 export interface PatientRef {
   id?: string
-  name: string
+  patient_no: string
   gender?: Gender
-  birth_date?: string | null
-  medical_no?: string | null
+  birth_year?: number | null
+  remark?: string | null
 }
 
 export interface TimelineEvent {
@@ -286,6 +297,12 @@ export interface StatsOverview {
 // ===== 登录 =====
 export interface LoginPayload {
   username: string
+  password: string
+}
+
+export interface RegisterPayload {
+  username: string
+  display_name: string
   password: string
 }
 

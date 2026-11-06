@@ -8,7 +8,15 @@ from . import schemas as s
 from .common import APIError, audit, get, page, reply, serialize
 from .config import settings
 from .db import get_db, now
-from .security import current_user, hash_password, limit_login, require, token, verify_password
+from .security import (
+    current_user,
+    hash_password,
+    limit_login,
+    limit_register,
+    require,
+    token,
+    verify_password,
+)
 
 router = APIRouter()
 
@@ -29,6 +37,34 @@ def login(body: s.Login, request: Request, db=Depends(get_db, scope="function"))
             "expires_in": settings.jwt_hours * 3600,
             "user": serialize(user),
         },
+    )
+
+
+@router.post("/auth/register", status_code=201)
+def register(body: s.Register, request: Request, db=Depends(get_db, scope="function")):
+    limit_register(request.client.host)
+    if db.scalar(select(m.User).where(m.User.username == body.username)):
+        raise APIError(409, "用户名已存在")
+    obj = m.User(
+        username=body.username,
+        display_name=body.display_name,
+        password_hash=hash_password(body.password),
+        roles=["screener"],
+        status="disabled",
+    )
+    db.add(obj)
+    db.flush()
+    audit(db, None, "auth.register", obj, request)
+    return reply(
+        request,
+        {
+            "id": obj.id,
+            "username": obj.username,
+            "display_name": obj.display_name,
+            "status": obj.status,
+            "message": "注册成功，请联系管理员启用账号并分配角色",
+        },
+        201,
     )
 
 

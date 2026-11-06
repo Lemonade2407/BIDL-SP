@@ -15,6 +15,7 @@ const tool = ref<'brush' | 'eraser' | 'polygon'>('brush')
 const brushSize = ref(4)
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
 const canvasRef = ref<InstanceType<typeof MaskCanvas> | null>(null)
+const annotationId = ref('')
 
 onMounted(async () => {
   const resp = await api.getImage(route.params.imageId as string)
@@ -29,12 +30,28 @@ function onMask(v: RleMask | null) {
 }
 
 async function save() {
-  await api.saveAnnotation({ image_id: image.value!.id, mask_rle: rle.value, is_empty: !rle.value, source: 'manual', status: 'draft' })
+  if (!image.value) return
+  const hasForeground = !!rle.value?.counts.some((count, index) => index % 2 === 1 && count > 0)
+  const mask = rle.value ?? {
+    size: [image.value.height, image.value.width] as [number, number],
+    counts: [image.value.height * image.value.width]
+  }
+  const resp = await api.saveAnnotation({
+    image_id: image.value.id,
+    mask_rle: mask,
+    is_empty: !hasForeground,
+    source: 'manual'
+  }) as { data: { id: string } }
+  annotationId.value = resp.data.id
   ElMessage.success('标注已保存（草稿）')
 }
 
 async function submit() {
-  await api.submitAnnotation('ann-1')
+  if (!annotationId.value) {
+    ElMessage.warning('请先保存草稿，再提交审核')
+    return
+  }
+  await api.submitAnnotation(annotationId.value)
   ElMessage.success('已提交审核')
 }
 </script>

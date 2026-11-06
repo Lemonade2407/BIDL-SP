@@ -5,11 +5,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[2]
 DISCLAIMER = "仅供科研/教学使用，不作为临床诊断依据"
+# 演示环境固定账号；生产部署前必须替换或删除公开注册与固定密码。
+DEMO_ADMIN_USERNAME = "admin"
+DEMO_PASSWORD = "DemoPassword!123"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    database_url: str = "sqlite:///./bidlsp.db"
+    database_url: str = Field(min_length=1)
     jwt_secret: str = Field(min_length=32)
     jwt_hours: int = Field(default=8, ge=1, le=8)
     redis_url: str = "redis://localhost:6379/0"

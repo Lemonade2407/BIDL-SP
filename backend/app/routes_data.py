@@ -28,6 +28,7 @@ def image_json(db, image):
         mask_available=bool(image.mask_object_key),
         annotation_status=annotation.status if annotation else "none",
         thumbnail_url=storage.url("bidlsp-curated", image.cache_key) if image.cache_key else None,
+        preview_url=storage.url("bidlsp-curated", image.preview_key) if image.preview_key else None,
     )
     for field in ("object_key", "mask_object_key", "cache_key", "preview_key"):
         result.pop(field, None)

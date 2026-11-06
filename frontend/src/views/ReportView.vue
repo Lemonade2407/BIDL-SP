@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Report, ReportContent } from '@/types'
 import * as api from '@/api'
@@ -8,6 +8,7 @@ import ReportEditor from '@/components/ReportEditor.vue'
 import StatusTag from '@/components/StatusTag.vue'
 
 const route = useRoute()
+const router = useRouter()
 const report = ref<Report | null>(null)
 
 onMounted(async () => {
@@ -20,8 +21,17 @@ function onContent(c: ReportContent) {
 }
 
 async function save() {
-  await api.createReport({ ...report.value!, content: report.value!.content })
-  ElMessage.success('报告已保存')
+  const current = report.value
+  if (!current) return
+  const resp = await api.createReport({
+    study_id: current.study_id,
+    inference_result_id: current.inference_result_id ?? null,
+    template_id: current.template_id,
+    content: current.content
+  }) as { data: Report }
+  report.value = resp.data
+  router.replace(`/reports/${resp.data.id}`)
+  ElMessage.success('报告已保存为新版本')
 }
 
 async function submit() {

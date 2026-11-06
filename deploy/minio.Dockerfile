@@ -1,6 +1,10 @@
 # MinIO no longer provides the historical public Docker Hub image.
 # Build the official AGPL source at an immutable, verified release commit.
 FROM golang:1.24-bookworm AS build
+# proxy.golang.org 在部分网络下不可达，使用国内镜像并保留 direct 兜底。
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn \
+    GOTOOLCHAIN=local
 WORKDIR /src
 RUN git init && git remote add origin https://github.com/minio/minio.git \
     && git fetch --depth 1 origin f19c534b9f457773dcd043d977433e1a71525c3b \

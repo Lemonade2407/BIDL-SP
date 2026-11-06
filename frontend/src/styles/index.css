@@ -1,8 +1,39 @@
 :root {
-  --im-dark: #0f1115;
-  --im-dark-2: #171a21;
-  --mask-color: rgba(244, 67, 54, 0.45);
+  --brand: #0f766e;
+  --brand-strong: #115e59;
+  --brand-soft: #e6f3f1;
+  --accent: #2dd4bf;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #dbe7e5;
+  --canvas: #f1f7f6;
+  --card: #ffffff;
+  --sidebar: #082f2e;
+  --sidebar-2: #0b3d3a;
+  --mask-color: rgba(244, 63, 94, 0.46);
   --border-soft: #e4e7ed;
+  --shadow-card: 0 18px 42px -28px rgba(15, 23, 42, 0.34);
+  --shadow-float: 0 24px 60px -30px rgba(8, 47, 46, 0.42);
+
+  /* Element Plus theme overrides */
+  --el-color-primary: #0f766e;
+  --el-color-primary-light-3: #4f9d96;
+  --el-color-primary-light-5: #7fbab4;
+  --el-color-primary-light-7: #a9d2cd;
+  --el-color-primary-light-8: #c6e3df;
+  --el-color-primary-light-9: #e6f3f1;
+  --el-color-primary-dark-2: #0b5d57;
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --el-font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --el-text-color-primary: #0f172a;
+  --el-text-color-regular: #475569;
+  --el-text-color-secondary: #64748b;
+  --el-border-color: #dbe7e5;
+  --el-border-color-light: #e6efed;
+  --el-fill-color-light: #f4f8f7;
+  --el-bg-color: #ffffff;
 }
 
 * {
@@ -10,26 +41,154 @@
 }
 
 html,
+body,
+#app {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  padding: 0;
-  height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
-    'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: #303133;
+  background:
+    radial-gradient(900px 420px at 100% -10%, rgba(45, 212, 191, 0.13), transparent 62%),
+    radial-gradient(700px 380px at -10% 100%, rgba(15, 118, 110, 0.09), transparent 60%),
+    var(--canvas);
+  color: var(--ink);
+  font-family: var(--el-font-family);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--brand);
+}
+
+/* ---------- Shared page language ---------- */
+.page-title {
+  position: relative;
+  margin: 0 0 18px;
+  padding-left: 14px;
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.page-title::before {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: 4px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--brand), var(--accent));
+  content: '';
+}
+
+.page-sub {
+  margin: -10px 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- Element Plus polish ---------- */
+.el-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.el-card__header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #eef4f2;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.el-card__body {
+  padding: 20px;
+}
+
+.el-button {
+  border-radius: 10px;
+  font-weight: 550;
+}
+
+.el-button--primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--brand), #0d9488);
+  box-shadow: 0 10px 22px -14px rgba(15, 118, 110, 0.8);
+}
+
+.el-button--primary:hover {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--brand-strong), #0f766e);
+}
+
+.el-button--primary.is-plain {
+  border-color: #b9dbd6;
+  background: #f2faf8;
+  color: var(--brand-strong);
+  box-shadow: none;
+}
+
+.el-input__wrapper,
+.el-textarea__inner {
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--line) inset;
+}
+
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--brand) inset, 0 0 0 3px rgba(15, 118, 110, 0.1);
+}
+
+.el-table {
+  --el-table-border-color: #e8f0ee;
+  --el-table-header-bg-color: #f6faf9;
+  --el-table-row-hover-bg-color: #f2faf8;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.el-table th.el-table__cell {
+  color: #475569;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+
+.el-tag {
+  border-radius: 999px;
+  font-weight: 550;
+}
+
+.el-descriptions__label {
+  color: var(--muted);
+}
+
+.el-empty__description p {
+  color: var(--muted);
+}
+
+.el-menu {
+  border-right: none !important;
+}
+
+.el-message {
+  border-radius: 12px;
 }
 
 .disclaimer {
+  color: var(--muted);
   font-size: 12px;
-  color: #909399;
   line-height: 1.5;
 }
 
+/* ---------- Medical image viewer ---------- */
 .im-viewer {
-  background: var(--im-dark);
-  border-radius: 6px;
-  overflow: hidden;
   position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #0f1115;
   user-select: none;
 }
 

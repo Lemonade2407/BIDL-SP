@@ -46,7 +46,7 @@ onMounted(async () => {
           <div v-if="screening">
             <div class="def muted">{{ screening.definition }}</div>
             <p>复核结论：接受 {{ screening.by_decision.accept }} / 修改 {{ screening.by_decision.modify }} / 驳回 {{ screening.by_decision.reject }}</p>
-            <p>平均复核耗时：{{ screening.avg_review_seconds }}s</p>
+            <p>平均复核耗时：{{ screening.avg_review_seconds.toFixed(2) }}s</p>
           </div>
         </el-card>
       </el-col>

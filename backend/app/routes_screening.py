@@ -160,7 +160,7 @@ def screen_tasks(
     p = request.query_params
     if p.get("status"):
         stmt = stmt.where(m.ScreenTask.status == p["status"])
-    elif p.get("assignee") != "me":
+    elif p.get("assignee") != "me" and "admin" not in user.roles:
         stmt = stmt.where(
             or_(
                 m.ScreenTask.status == "pending",

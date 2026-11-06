@@ -38,7 +38,7 @@ jobs:
           cache-dependency-path: backend/requirements*.txt
       - run: pip install -r backend/requirements-dev.txt
       - run: ruff check backend/app backend/tests --select E9,F63,F7,F82
-      - run: pytest backend/tests -q
+      - run: pytest backend/tests algo/tests -q
       - run: python transunet/scripts/verify_metrics.py
       - name: Validate deployment configuration
         run: |
@@ -58,3 +58,19 @@ jobs:
         run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs --tail 100
       - if: always()
         run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml down -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run type-check
+      - run: npm run build

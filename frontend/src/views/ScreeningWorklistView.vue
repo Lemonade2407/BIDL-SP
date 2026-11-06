@@ -61,7 +61,7 @@ onMounted(fetch)
           <template #default="{ row }">{{ studyOf(row)?.study_no || '—' }}</template>
         </el-table-column>
         <el-table-column label="患者" width="120">
-          <template #default="{ row }">{{ studyOf(row)?.patient.name || '—' }}</template>
+          <template #default="{ row }">{{ studyOf(row)?.patient.patient_no || '—' }}</template>
         </el-table-column>
         <el-table-column label="设备" width="140">
           <template #default="{ row }">{{ studyOf(row)?.device || '—' }}</template>

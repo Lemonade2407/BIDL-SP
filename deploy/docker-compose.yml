@@ -1,10 +1,13 @@
 name: bidlsp
 
+# 默认使用本地对象存储（共享卷），不依赖 MinIO 镜像构建。
+# 如需 MinIO：设置 STORAGE_BACKEND=minio 并执行 docker compose --profile minio up -d
 x-platform: &platform
   DATABASE_URL: postgresql+psycopg://bidl:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/bidlsp
   JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
   REDIS_URL: redis://redis:6379/0
-  STORAGE_BACKEND: minio
+  STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+  STORAGE_DIR: /opt/bidl/.runtime/objects
   MINIO_ENDPOINT: minio:9000
   MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost:9000}
   MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-bidlsp}
@@ -40,7 +43,9 @@ services:
       retries: 20
     restart: unless-stopped
 
+  # 可选组件：docker compose --profile minio up -d
   minio:
+    profiles: ["minio"]
     build: {context: .., dockerfile: deploy/minio.Dockerfile}
     command: server /data --console-address :9001
     environment:
@@ -59,10 +64,10 @@ services:
     build: {context: .., dockerfile: deploy/Dockerfile, target: api}
     environment:
       <<: *platform
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD}
+
     depends_on:
       db: {condition: service_healthy}
-      minio: {condition: service_healthy}
+    volumes: ["runtime-data:/opt/bidl/.runtime"]
     command: ["sh", "-c", "alembic -c backend/alembic.ini upgrade head && python -m app.cli init-storage && python -m app.cli seed-admin"]
     restart: "no"
 
@@ -73,7 +78,7 @@ services:
       init: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
     ports: ["127.0.0.1:8000:8000"]
-    volumes: ["api-work:/opt/bidl/.runtime"]
+    volumes: ["runtime-data:/opt/bidl/.runtime"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/readyz')"]
       interval: 10s
@@ -87,7 +92,7 @@ services:
     depends_on:
       init: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
-    volumes: ["worker-work:/opt/bidl/.runtime"]
+    volumes: ["runtime-data:/opt/bidl/.runtime"]
     restart: unless-stopped
 
   scheduler:
@@ -97,7 +102,7 @@ services:
     depends_on:
       init: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
-    volumes: ["scheduler-work:/opt/bidl/.runtime"]
+    volumes: ["runtime-data:/opt/bidl/.runtime"]
     restart: unless-stopped
 
   dispatcher:
@@ -107,6 +112,7 @@ services:
     depends_on:
       init: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
+    volumes: ["runtime-data:/opt/bidl/.runtime"]
     restart: unless-stopped
 
   nginx:
@@ -122,7 +128,5 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  runtime-data:
   minio-data:
-  api-work:
-  worker-work:
-  scheduler-work:

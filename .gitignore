@@ -47,6 +47,11 @@ venv/
 /algo/outputs/
 .pytest_cache/
 
+# ---------- 前端构建产物 ----------
+# Vite 输出与 nginx 静态目录，均由 deploy/build_frontend.py 生成
+/frontend/dist/
+/deploy/html/
+
 # Member A local configuration, databases and evidence artifacts
 /.runtime/
 **/.env

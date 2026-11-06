@@ -8,7 +8,7 @@ export const http: AxiosInstance = axios.create({
 })
 
 http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = localStorage.getItem('bidl_token')
+  const token = sessionStorage.getItem('bidl_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -17,14 +17,14 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 })
 
 http.interceptors.response.use(
-  (resp) => resp,
+  (resp) => resp.data,
   (error) => {
     const status = error.response?.status
     const data = error.response?.data as ApiError | undefined
     const msg = data?.message || error.message || '网络错误'
     if (status === 401) {
-      localStorage.removeItem('bidl_token')
-      localStorage.removeItem('bidl_user')
+      sessionStorage.removeItem('bidl_token')
+      sessionStorage.removeItem('bidl_user')
       if (window.location.pathname !== '/login') {
         window.location.href = '/login'
       }

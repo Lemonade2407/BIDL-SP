@@ -2,10 +2,25 @@ import { defineStore } from 'pinia'
 import type { LoginPayload, Role, User } from '@/types'
 import * as api from '@/api'
 
+function readToken(): string {
+  const value = sessionStorage.getItem('bidl_token')
+  return value && value !== 'undefined' && value !== 'null' ? value : ''
+}
+
+function readUser(): User | null {
+  const raw = sessionStorage.getItem('bidl_user')
+  if (!raw || raw === 'undefined' || raw === 'null') return null
+  try {
+    return JSON.parse(raw) as User
+  } catch {
+    return null
+  }
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    token: localStorage.getItem('bidl_token') || '',
-    user: JSON.parse(localStorage.getItem('bidl_user') || 'null') as User | null
+    token: readToken(),
+    user: readUser()
   }),
   getters: {
     isAuthed: (s) => !!s.token,
@@ -23,14 +38,18 @@ export const useAuthStore = defineStore('auth', {
       const data = (resp as { data: { access_token: string; user: User } }).data
       this.token = data.access_token
       this.user = data.user
-      localStorage.setItem('bidl_token', data.access_token)
-      localStorage.setItem('bidl_user', JSON.stringify(data.user))
+      sessionStorage.setItem('bidl_token', data.access_token)
+      sessionStorage.setItem('bidl_user', JSON.stringify(data.user))
     },
-    logout() {
-      this.token = ''
-      this.user = null
-      localStorage.removeItem('bidl_token')
-      localStorage.removeItem('bidl_user')
+    async logout() {
+      try {
+        await api.logout()
+      } finally {
+        this.token = ''
+        this.user = null
+        sessionStorage.removeItem('bidl_token')
+        sessionStorage.removeItem('bidl_user')
+      }
     }
   }
 })

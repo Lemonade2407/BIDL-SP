@@ -101,23 +101,32 @@ def require(*permissions):
     return dependency
 
 
-def limit_login(ip):
+def _throttle(bucket, ip, limit, message):
     if settings.rate_limit_backend == "memory":
         with _limit_lock:
             stamp = time.monotonic()
-            _attempts[ip] = [t for t in _attempts[ip] if stamp - t < 60]
-            if len(_attempts[ip]) >= 5:
-                raise APIError(429, "登录过于频繁，请一分钟后重试")
-            _attempts[ip].append(stamp)
+            key = bucket + ":" + ip
+            _attempts[key] = [t for t in _attempts[key] if stamp - t < 60]
+            if len(_attempts[key]) >= limit:
+                raise APIError(429, message)
+            _attempts[key].append(stamp)
     else:
         try:
             client = Redis.from_url(settings.redis_url, socket_timeout=2)
             count = client.eval(
                 "local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],60) end; return n",
                 1,
-                "login:" + ip,
+                bucket + ":" + ip,
             )
         except Exception:
             raise APIError(503, "认证限流依赖不可用") from None
-        if count > 5:
-            raise APIError(429, "登录过于频繁，请一分钟后重试")
+        if count > limit:
+            raise APIError(429, message)
+
+
+def limit_login(ip):
+    _throttle("login", ip, 5, "登录过于频繁，请一分钟后重试")
+
+
+def limit_register(ip):
+    _throttle("register", ip, 5, "注册过于频繁，请一分钟后重试")

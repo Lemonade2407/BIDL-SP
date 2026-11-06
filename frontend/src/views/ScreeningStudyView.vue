@@ -2,7 +2,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { Study } from '@/types'
+import type { InferenceTask, Report, ReportTemplate, Study } from '@/types'
 import * as api from '@/api'
 import ImageViewer from '@/components/ImageViewer.vue'
 import MaskOverlay from '@/components/MaskOverlay.vue'
@@ -21,23 +21,81 @@ onMounted(async () => {
   if (study.value.latest_inference) analysisState.value = 'done'
 })
 
-function runAnalysis() {
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+async function runAnalysis() {
+  if (!study.value?.images.length) {
+    ElMessage.warning('该检查没有可分析的影像')
+    return
+  }
   analysisState.value = 'running'
-  setTimeout(() => {
-    analysisState.value = 'done'
-    ElMessage.success('推理完成')
-  }, 1600)
+  try {
+    const created = await api.createInference({
+      image_id: study.value.images[0].id
+    }) as { data: { task_id?: string; id?: string } }
+    const taskId = created.data.task_id || created.data.id
+    if (!taskId) throw new Error('推理任务未返回 task_id')
+
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const resp = await api.getInference(taskId) as { data: InferenceTask }
+      const task = resp.data
+      if (task.status === 'succeeded') {
+        study.value.latest_inference = task.result ?? null
+        analysisState.value = 'done'
+        ElMessage.success('推理完成')
+        return
+      }
+      if (task.status === 'failed') {
+        const detail: any = task.error
+        throw new Error(detail?.message || detail || '推理失败')
+      }
+      await wait(1000)
+    }
+    throw new Error('推理超时，请稍后重试')
+  } catch (error: any) {
+    analysisState.value = 'idle'
+    ElMessage.error(error?.response?.data?.message || error?.message || '推理失败')
+  }
 }
 
 async function review(decision: string) {
-  const msg = decision === 'reject' ? '确认驳回该检查？' : '确认提交复核结论？'
-  await ElMessageBox.confirm(msg, '复核确认', { type: 'warning' })
+  if (decision === 'modify') {
+    ElMessage.info('修改掩膜请在标注编辑器中完成，再回到本页复核')
+    return
+  }
+  if (decision === 'reject') {
+    const { value } = await ElMessageBox.prompt('请输入驳回原因', '驳回检查', {
+      inputPlaceholder: '原因…'
+    })
+    await api.reviewStudy(study.value!.id, { decision, comment: value })
+    ElMessage.success('已驳回')
+    return
+  }
+  await ElMessageBox.confirm('确认提交复核结论？', '复核确认', { type: 'warning' })
   await api.reviewStudy(study.value!.id, { decision })
   ElMessage.success('复核已提交')
 }
 
-function toReport() {
-  router.push('/reports/rp-2')
+async function toReport() {
+  if (!study.value) return
+  try {
+    const templates = await api.getReportTemplates() as { data: ReportTemplate[] }
+    const template = templates.data.find((item) => item.active)
+    if (!template) {
+      ElMessage.warning('没有启用的报告模板')
+      return
+    }
+    const resp = await api.createReport({
+      study_id: study.value.id,
+      template_id: template.id,
+      content: { findings: '', impression: '', recommendation: '' }
+    }) as { data: Report }
+    router.push(`/reports/${resp.data.id}`)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '创建报告失败')
+  }
 }
 </script>
 
@@ -46,8 +104,9 @@ function toReport() {
     <h3 class="page-title">检查复核 · {{ study?.study_no }}</h3>
     <el-card shadow="never" v-if="study">
       <el-descriptions :column="4" border size="small" style="margin-bottom: 12px">
-        <el-descriptions-item label="患者">{{ study.patient.name }}</el-descriptions-item>
+        <el-descriptions-item label="患者编号">{{ study.patient.patient_no }}</el-descriptions-item>
         <el-descriptions-item label="性别">{{ study.patient.gender }}</el-descriptions-item>
+        <el-descriptions-item label="出生年份">{{ study.patient.birth_year || '—' }}</el-descriptions-item>
         <el-descriptions-item label="设备">{{ study.device || '—' }}</el-descriptions-item>
         <el-descriptions-item label="检查日期">{{ study.study_date }}</el-descriptions-item>
         <el-descriptions-item label="申请指征" :span="4">{{ study.indication || '—' }}</el-descriptions-item>

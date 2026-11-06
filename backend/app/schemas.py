@@ -24,6 +24,12 @@ class PasswordChange(Input):
     new_password: Password
 
 
+class Register(Input):
+    username: str = Field(min_length=3, max_length=64)
+    display_name: str = Field(min_length=1, max_length=64)
+    password: Password
+
+
 class UserCreate(Login):
     display_name: str = Field(min_length=1, max_length=64)
     roles: list[Role] = Field(min_length=1)
