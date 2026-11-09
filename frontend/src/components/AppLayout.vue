@@ -4,8 +4,8 @@ import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
-  ArrowDown, Cpu, DataAnalysis, DataBoard, Document, EditPen, Files, Picture,
-  SwitchButton, UploadFilled, User, View
+  ArrowDown, Cpu, DataAnalysis, DataBoard, Document, DocumentChecked, EditPen, Files, Picture,
+  Search, SwitchButton, UploadFilled, User, View
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -22,9 +22,12 @@ const menus: MenuItem[] = [
   { path: '/data/datasets', label: '数据集版本', icon: Files },
   { path: '/annotation/tasks', label: '标注任务', icon: EditPen, roles: ['annotator', 'admin', 'reviewer'] },
   { path: '/screening/worklist', label: '筛查工作台', icon: View, roles: ['screener', 'admin', 'reviewer'] },
+  { path: '/screening/studies', label: '检查检索', icon: Search, roles: ['screener', 'admin', 'reviewer'] },
+  { path: '/reports', label: '报告中心', icon: DocumentChecked, roles: ['screener', 'admin', 'reviewer'] },
   { path: '/models', label: '模型与指标', icon: Cpu },
   { path: '/stats', label: '统计看板', icon: DataAnalysis },
   { path: '/admin/users', label: '用户管理', icon: User, roles: ['admin'] },
+  { path: '/admin/report-templates', label: '报告模板', icon: Document, roles: ['admin'] },
   { path: '/admin/audit', label: '审计日志', icon: Document, roles: ['admin'] }
 ]
 

@@ -258,6 +258,8 @@ def freeze(db, version, user, request):
         stmt = stmt.where(m.Image.class_label.in_(filters["class_labels"]))
     if filters.get("image_ids"):
         stmt = stmt.where(m.Image.id.in_(filters["image_ids"]))
+    if filters.get("only_usable"):
+        stmt = stmt.where(m.Image.exclude_reason.is_(None))
     images = list(db.scalars(stmt.order_by(m.Image.relative_path)))
     annotations = {
         a.image_id: a

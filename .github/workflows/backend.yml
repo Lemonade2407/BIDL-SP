@@ -54,6 +54,12 @@ jobs:
         run: |
           docker compose --env-file deploy/.env -f deploy/docker-compose.yml exec -T worker python -c "import sys; sys.path.insert(0, '/opt/bidl/transunet/TransUNet'); from networks.vit_seg_modeling import VisionTransformer; from algo.adapter.predictor import Predictor; print('Algorithm imports OK')"
           python backend/scripts/smoke_compose.py
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Verify UI login and key pages
+        run: python backend/scripts/e2e_ui.py
       - if: failure()
         run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs --tail 100
       - if: always()

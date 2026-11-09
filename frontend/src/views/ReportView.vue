@@ -10,6 +10,7 @@ import StatusTag from '@/components/StatusTag.vue'
 const route = useRoute()
 const router = useRouter()
 const report = ref<Report | null>(null)
+const pdfLoading = ref(false)
 
 onMounted(async () => {
   const resp = await api.getReport(route.params.id as string)
@@ -53,6 +54,30 @@ async function reject() {
   ElMessage.success('已驳回')
   report.value!.status = 'rejected'
 }
+
+async function exportPdf(mode: 'download' | 'print') {
+  const current = report.value
+  if (!current) return
+  pdfLoading.value = true
+  try {
+    const blob = await api.getReportPdf(current.id) as unknown as Blob
+    const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))
+    if (mode === 'print') {
+      window.open(url, '_blank')
+    } else {
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `report-${current.id}-v${current.version}.pdf`
+      link.click()
+      ElMessage.success(current.status === 'signed' ? '已下载签发版 PDF' : '已下载草稿预览 PDF（含水印）')
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch {
+    ElMessage.error('PDF 生成或下载失败')
+  } finally {
+    pdfLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -66,6 +91,8 @@ async function reject() {
           <span class="muted">版本 v{{ report.version }}</span>
         </el-space>
         <div>
+          <el-button :loading="pdfLoading" @click="exportPdf('download')">下载 PDF</el-button>
+          <el-button :loading="pdfLoading" @click="exportPdf('print')">打印</el-button>
           <el-button v-if="report.status === 'draft'" @click="save">保存</el-button>
           <el-button v-if="report.status === 'draft'" type="primary" @click="submit">提交审核</el-button>
           <el-button v-if="report.status === 'pending_review'" type="success" @click="sign">签发</el-button>

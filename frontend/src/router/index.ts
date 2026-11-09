@@ -16,12 +16,17 @@ const routes: RouteRecordRaw[] = [
       { path: 'data/datasets', name: 'data-datasets', component: () => import('@/views/DataDatasetsView.vue') },
       { path: 'annotation/tasks', name: 'annotation-tasks', component: () => import('@/views/AnnotationTasksView.vue'), meta: { roles: ['annotator', 'admin', 'reviewer'] } },
       { path: 'annotation/editor/:imageId', name: 'annotation-editor', component: () => import('@/views/AnnotationEditorView.vue'), meta: { roles: ['annotator', 'admin'] } },
+      { path: 'annotation/review/:annotationId', name: 'annotation-review', component: () => import('@/views/AnnotationReviewView.vue'), meta: { roles: ['reviewer', 'admin'] } },
       { path: 'screening/worklist', name: 'screening-worklist', component: () => import('@/views/ScreeningWorklistView.vue'), meta: { roles: ['screener', 'admin', 'reviewer'] } },
+      { path: 'screening/studies', name: 'study-search', component: () => import('@/views/StudySearchView.vue'), meta: { roles: ['screener', 'admin', 'reviewer'] } },
+      { path: 'screening/new', name: 'screening-new', component: () => import('@/views/ScreeningNewView.vue'), meta: { roles: ['screener', 'admin'] } },
       { path: 'screening/studies/:id', name: 'screening-study', component: () => import('@/views/ScreeningStudyView.vue'), meta: { roles: ['screener', 'reviewer', 'admin'] } },
+      { path: 'reports', name: 'reports', component: () => import('@/views/ReportsView.vue'), meta: { roles: ['screener', 'reviewer', 'admin'] } },
       { path: 'reports/:id', name: 'report', component: () => import('@/views/ReportView.vue'), meta: { roles: ['screener', 'reviewer', 'admin'] } },
       { path: 'models', name: 'models', component: () => import('@/views/ModelsView.vue') },
       { path: 'stats', name: 'stats', component: () => import('@/views/StatsView.vue') },
       { path: 'admin/users', name: 'admin-users', component: () => import('@/views/AdminUsersView.vue'), meta: { roles: ['admin'] } },
+      { path: 'admin/report-templates', name: 'admin-report-templates', component: () => import('@/views/ReportTemplatesView.vue'), meta: { roles: ['admin'] } },
       { path: 'admin/audit', name: 'admin-audit', component: () => import('@/views/AdminAuditView.vue'), meta: { roles: ['admin'] } }
     ]
   },

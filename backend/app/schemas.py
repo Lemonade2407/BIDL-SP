@@ -62,6 +62,7 @@ class Ratios(Input):
 class ImageFilter(Input):
     class_labels: list[Label] | None = None
     only_approved: bool = False
+    only_usable: bool = False
     image_ids: list[ID] | None = None
 
 
@@ -79,12 +80,17 @@ class AnnotationTaskCreate(Input):
     class_labels: list[Label] | None = None
     count: int = Field(default=500, ge=1, le=500)
     priority: int = Field(default=3, ge=1, le=5)
+    required_annotators: int = Field(default=1, ge=1, le=2)
 
     @model_validator(mode="after")
     def source(self):
         if bool(self.dataset_version_id) == bool(self.image_ids):
             raise ValueError("choose dataset_version_id or image_ids")
         return self
+
+
+class ImageExclude(Input):
+    exclude_reason: str | None = Field(default=None, max_length=64)
 
 
 class RLE(Input):
@@ -195,6 +201,10 @@ class ScreenCreate(Input):
     priority: int = Field(default=3, ge=1, le=5)
 
 
+class ScreenReassign(Input):
+    assignee_id: ID
+
+
 class StudyDecision(Input):
     decision: Literal["accept", "modify", "reject"]
     image_id: ID | None = None
@@ -216,6 +226,11 @@ class TemplatePatch(Input):
     body: str | None = Field(default=None, min_length=1, max_length=20000)
     variables: list[str] | None = Field(default=None, max_length=30)
     active: bool | None = None
+
+
+class TemplatePreview(Input):
+    body: str = Field(min_length=1, max_length=20000)
+    variables: list[str] = Field(default_factory=list, max_length=30)
 
 
 class ReportContent(Input):

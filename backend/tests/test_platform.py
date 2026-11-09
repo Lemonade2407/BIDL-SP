@@ -22,15 +22,15 @@ def post(client, path, headers, payload=None, status=200):
     return response.json()["data"] if response.content else None
 
 
-def test_openapi_matches_all_64_contract_endpoints():
+def test_openapi_matches_all_76_contract_endpoints():
     contract = (ROOT / "接口规范.md").read_text(encoding="utf-8")
     expected = re.findall(r"\| \d{3} \| (GET|POST|PATCH) \| `([^`]+)`", contract)
     actual = app.openapi()["paths"]
-    assert len(expected) == 64
+    assert len(expected) == 76
     for method, path in expected:
         assert method.lower() in actual["/api/v1" + path], path
     assert (
-        len([(p, v) for p, methods in actual.items() for v in methods if v in {"get", "post", "patch"}]) == 64
+        len([(p, v) for p, methods in actual.items() for v in methods if v in {"get", "post", "patch"}]) == 76
     )
 
 
@@ -535,3 +535,480 @@ def test_duplicate_class_conflict_is_visible(client, headers):
     ]
     assert job["success"] == 1 and job["duplicate"] == 1
     assert job["report"]["warnings"][0]["class_conflict"] is True
+
+
+def test_study_review_modify_creates_annotation_without_hijacking_task(client, headers, imported):
+    _, images = imported
+    image = images[0]
+    annotation_task = post(client, "/annotation-tasks", headers["admin"], {"image_ids": [image["id"]]}, 201)[
+        "task_ids"
+    ][0]
+    post(client, f"/annotation-tasks/{annotation_task}/claim", headers["annotator"])
+    patient = post(client, "/patients", headers["screener"], {"gender": "F"}, 201)
+    study = post(
+        client,
+        "/studies",
+        headers["screener"],
+        {"patient_id": patient["id"], "study_date": "2026-11-02", "image_ids": [image["id"]]},
+        201,
+    )
+    task = post(client, "/screen-tasks", headers["screener"], {"study_id": study["id"]}, 201)
+    post(client, f"/screen-tasks/{task['id']}/claim", headers["screener"])
+    payload = {
+        "decision": "modify",
+        "image_id": image["id"],
+        "mask_rle": {"size": [12, 16], "counts": [0, 192]},
+        "is_empty": False,
+        "comment": "医生修正边界",
+    }
+    review = post(client, f"/studies/{study['id']}/reviews", headers["screener"], payload)
+    assert review["decision"] == "modify"
+    history = client.get(f"/api/v1/images/{image['id']}/annotations", headers=headers["screener"]).json()[
+        "data"
+    ]
+    assert history[0]["version"] == 2
+    assert history[0]["status"] == "draft" and history[0]["source"] == "manual"
+    with SessionLocal() as db:
+        row = db.get(m.AnnotationTask, annotation_task)
+        assert row.status == "in_progress" and row.annotation_id is None and row.assignee_id
+    assert (
+        client.post(
+            f"/api/v1/studies/{study['id']}/reviews", headers=headers["screener"], json=payload
+        ).status_code
+        == 409
+    )
+
+
+def test_studies_search_exclusion_version_filter_and_reports_list(client, headers, imported):
+    dataset_id, images = imported
+    image = images[0]
+    patient = post(client, "/patients", headers["screener"], {"gender": "F"}, 201)
+    study = post(
+        client,
+        "/studies",
+        headers["screener"],
+        {"patient_id": patient["id"], "study_date": "2026-11-02", "image_ids": [image["id"]]},
+        201,
+    )
+    listed = client.get("/api/v1/studies?q=" + study["study_no"], headers=headers["reviewer"]).json()
+    assert listed["meta"]["total"] == 1
+    row = listed["data"][0]
+    assert row["patient_no"] == patient["patient_no"] and row["image_count"] == 1
+    assert row["screen_task"] is None and row["report"] is None
+
+    assert (
+        client.post(
+            f"/api/v1/images/{image['id']}/exclude",
+            headers=headers["annotator"],
+            json={"exclude_reason": "blur"},
+        ).status_code
+        == 403
+    )
+    excluded = post(
+        client, f"/images/{image['id']}/exclude", headers["data_engineer"], {"exclude_reason": "模糊"}
+    )
+    assert excluded["excluded"] is True
+    assert client.get("/api/v1/images?exclude=true", headers=headers["admin"]).json()["meta"]["total"] == 1
+    version = post(
+        client,
+        "/dataset-versions",
+        headers["data_engineer"],
+        {"dataset_id": dataset_id, "version": "usable", "filter": {"only_usable": True}},
+        201,
+    )
+    frozen = post(client, f"/dataset-versions/{version['id']}/freeze", headers["data_engineer"])
+    assert sum(frozen["counts"].values()) == 20
+    restored = post(
+        client, f"/images/{image['id']}/exclude", headers["data_engineer"], {"exclude_reason": None}
+    )
+    assert restored["excluded"] is False
+
+    assert client.get("/api/v1/reports", headers=headers["admin"]).json()["data"] == []
+    assert client.get("/api/v1/reports", headers=headers["annotator"]).status_code == 403
+    preview = post(
+        client,
+        "/report-templates/preview",
+        headers["admin"],
+        {"body": "<p>{{ patient_no }}</p><p>{{ disclaimer }}</p>", "variables": ["patient_no"]},
+        200,
+    )
+    assert "P0001" in preview["html"] and "仅供科研" in preview["html"]
+    assert (
+        client.post(
+            "/api/v1/report-templates/preview",
+            headers=headers["screener"],
+            json={"body": "<p>{{ disclaimer }}</p>", "variables": []},
+        ).status_code
+        == 403
+    )
+
+
+def test_dual_annotation_consistency_and_arbitration(client, headers, imported):
+    _, images = imported
+    full = {"size": [12, 16], "counts": [0, 192]}
+    empty = {"size": [12, 16], "counts": [192]}
+    for index in (0, 1):
+        image = images[index]
+        task_id = post(
+            client,
+            "/annotation-tasks",
+            headers["admin"],
+            {"image_ids": [image["id"]], "required_annotators": 2},
+            201,
+        )["task_ids"][0]
+        post(client, f"/annotation-tasks/{task_id}/claim", headers["annotator"])
+        joined = post(client, f"/annotation-tasks/{task_id}/join", headers["admin"])
+        assert joined["required_annotators"] == 2 and len(joined["participants"]) == 2
+        assert (
+            client.post(f"/api/v1/annotation-tasks/{task_id}/join", headers=headers["annotator"]).status_code
+            == 409
+        )
+        first = post(
+            client,
+            "/annotations",
+            headers["annotator"],
+            {"image_id": image["id"], "mask_rle": full, "source": "manual"},
+            201,
+        )
+        post(client, f"/annotations/{first['id']}/submit", headers["annotator"])
+        mask = full if index == 0 else empty
+        second = post(
+            client,
+            "/annotations",
+            headers["admin"],
+            {"image_id": image["id"], "mask_rle": mask, "source": "manual", "is_empty": index == 1},
+            201,
+        )
+        second = post(client, f"/annotations/{second['id']}/submit", headers["admin"])
+
+    tasks = client.get("/api/v1/annotation-tasks?page_size=10", headers=headers["admin"]).json()["data"]
+    by_image = {item["image_id"]: item for item in tasks}
+    auto, dispute = by_image[images[0]["id"]], by_image[images[1]["id"]]
+    assert auto["status"] == "approved" and auto["consistency"]["auto"] is True
+    assert auto["consistency"]["iou"] == 1.0
+    assert dispute["status"] == "submitted" and dispute["consistency"]["auto"] is False
+    assert dispute["consistency"]["iou"] == 0.0
+    pending = client.get(
+        f"/api/v1/images/{images[1]['id']}/annotations?status=pending", headers=headers["reviewer"]
+    ).json()["data"]
+    assert len(pending) == 2
+    chosen = pending[0]
+    approved = post(
+        client,
+        f"/annotations/{chosen['id']}/reviews",
+        headers["reviewer"],
+        {"decision": "approve", "comment": "仲裁通过"},
+    )
+    assert approved["status"] == "approved"
+    others = client.get(f"/api/v1/images/{images[1]['id']}/annotations", headers=headers["reviewer"]).json()[
+        "data"
+    ]
+    assert sum(item["status"] == "approved" for item in others) == 1
+    assert sum(item["status"] == "rejected" for item in others) == 2
+
+
+def test_report_ai_draft_prefill(client, headers, imported, monkeypatch):
+    import numpy as np
+    from app import worker
+    from conftest import png_bytes
+
+    _, images = imported
+    image = images[0]
+    registry = json.loads((ROOT / "algo/models/registry.json").read_text())["models"][0]
+    model = post(client, "/models", headers["admin"], {"name": "transunet"}, 201)
+    storage.put("bidlsp-model", "draft/weights.pth", b"draft-weight")
+    import hashlib
+
+    version = post(
+        client,
+        f"/models/{model['id']}/versions",
+        headers["admin"],
+        {
+            "version": "draft",
+            "weights_key": "draft/weights.pth",
+            "weights_sha256": hashlib.sha256(b"draft-weight").hexdigest(),
+            "config": registry["config"],
+            "metrics": registry["metrics"],
+        },
+        201,
+    )
+    post(client, f"/model-versions/{version['id']}/activate", headers["admin"])
+
+    def fake_prediction(db, task):
+        path = settings.work_dir / task.id / "mask.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(png_bytes(np.ones((12, 16), dtype="uint8") * 255))
+        return {
+            "result": {
+                "mask_rle": {"size": [12, 16], "counts": [0, 192]},
+                "prob_mean": 0.7,
+                "lesion_area_ratio": 0.25,
+                "quality_flags": ["AREA_TOO_LARGE"],
+                "elapsed_ms": 10,
+            },
+            "artifacts": {"mask": str(path), "mask_raw": str(path), "overlay": str(path)},
+        }
+
+    monkeypatch.setattr(worker, "run_prediction", fake_prediction)
+    patient = post(client, "/patients", headers["screener"], {"gender": "F"}, 201)
+    study = post(
+        client,
+        "/studies",
+        headers["screener"],
+        {"patient_id": patient["id"], "study_date": "2026-11-02", "image_ids": [image["id"]]},
+        201,
+    )
+    task = post(client, "/screen-tasks", headers["screener"], {"study_id": study["id"]}, 201)
+    post(client, f"/screen-tasks/{task['id']}/claim", headers["screener"])
+    post(client, "/inference-tasks", headers["screener"], {"image_id": image["id"]}, 202)
+    drain_eager()
+    post(client, f"/studies/{study['id']}/reviews", headers["screener"], {"decision": "accept"})
+    template = client.get("/api/v1/report-templates", headers=headers["admin"]).json()["data"][0]
+    report = post(
+        client,
+        "/reports",
+        headers["screener"],
+        {
+            "study_id": study["id"],
+            "inference_result_id": None,
+            "template_id": template["id"],
+            "content": {"findings": "", "impression": "", "recommendation": ""},
+        },
+        201,
+    )
+    assert report["content"]["findings"].startswith("[AI 草稿")
+    assert "面积占比" in report["content"]["findings"]
+    pdf = client.get(f"/api/v1/reports/{report['id']}/pdf", headers=headers["admin"])
+    assert "AI 草稿" in "".join(page.extract_text() for page in PdfReader(io.BytesIO(pdf.content)).pages)
+    listed = client.get("/api/v1/reports?status=draft", headers=headers["admin"]).json()
+    assert listed["meta"]["total"] == 1 and listed["data"][0]["id"] == report["id"]
+
+
+def test_task_release_reassign_archive_and_evaluation_list(client, headers, imported):
+    dataset_id, images = imported
+    version = post(
+        client,
+        "/dataset-versions",
+        headers["data_engineer"],
+        {"dataset_id": dataset_id, "version": "v-archive"},
+        201,
+    )
+    assert (
+        client.post(
+            f"/api/v1/dataset-versions/{version['id']}/archive", headers=headers["data_engineer"]
+        ).status_code
+        == 409
+    )
+    post(client, f"/dataset-versions/{version['id']}/freeze", headers["data_engineer"])
+    assert (
+        client.get(
+            f"/api/v1/dataset-versions/{version['id']}/manifest",
+            headers=headers["admin"],
+            follow_redirects=False,
+        ).status_code
+        == 302
+    )
+    archived = post(client, f"/dataset-versions/{version['id']}/archive", headers["data_engineer"])
+    assert archived["status"] == "archived"
+    assert (
+        client.post(
+            f"/api/v1/dataset-versions/{version['id']}/archive", headers=headers["data_engineer"]
+        ).status_code
+        == 409
+    )
+
+    task = post(client, "/annotation-tasks", headers["admin"], {"image_ids": [images[0]["id"]]}, 201)[
+        "task_ids"
+    ][0]
+    post(client, f"/annotation-tasks/{task}/claim", headers["annotator"])
+    assert (
+        client.post(f"/api/v1/annotation-tasks/{task}/release", headers=headers["admin"]).status_code == 409
+    )
+    released = post(client, f"/annotation-tasks/{task}/release", headers["annotator"])
+    assert released["status"] == "pending" and released["assignee_id"] is None
+    assert (
+        client.post(f"/api/v1/annotation-tasks/{task}/release", headers=headers["annotator"]).status_code
+        == 409
+    )
+    reclaim = post(client, f"/annotation-tasks/{task}/claim", headers["annotator"])
+    assert reclaim["status"] == "in_progress" and reclaim["assignee_id"]
+
+    users = client.get("/api/v1/users?page_size=100", headers=headers["admin"]).json()["data"]
+    reviewer_id = next(u["id"] for u in users if u["username"] == "reviewer")
+    patient = post(client, "/patients", headers["screener"], {"gender": "F"}, 201)
+    study = post(
+        client,
+        "/studies",
+        headers["screener"],
+        {"patient_id": patient["id"], "study_date": "2026-11-02", "image_ids": [images[1]["id"]]},
+        201,
+    )
+    screen = post(client, "/screen-tasks", headers["screener"], {"study_id": study["id"]}, 201)
+    post(client, f"/screen-tasks/{screen['id']}/claim", headers["screener"])
+    assert (
+        client.post(
+            f"/api/v1/screen-tasks/{screen['id']}/reassign",
+            headers=headers["screener"],
+            json={"assignee_id": reviewer_id},
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            f"/api/v1/screen-tasks/{screen['id']}/reassign",
+            headers=headers["admin"],
+            json={"assignee_id": next(u["id"] for u in users if u["username"] == "annotator")},
+        ).status_code
+        == 422
+    )
+    admin_id = next(u["id"] for u in users if u["username"] == "admin")
+    assert (
+        client.post(
+            f"/api/v1/screen-tasks/{screen['id']}/reassign",
+            headers=headers["admin"],
+            json={"assignee_id": reviewer_id},
+        ).status_code
+        == 422
+    )
+    moved = post(
+        client, f"/screen-tasks/{screen['id']}/reassign", headers["admin"], {"assignee_id": admin_id}
+    )
+    assert moved["assignee"]["id"] == admin_id and moved["status"] == "in_progress"
+    assert (
+        client.post(f"/api/v1/screen-tasks/{screen['id']}/release", headers=headers["admin"]).json()["data"][
+            "status"
+        ]
+        == "pending"
+    )
+    assert (
+        client.post(f"/api/v1/screen-tasks/{screen['id']}/release", headers=headers["admin"]).status_code
+        == 409
+    )
+
+    assert client.get("/api/v1/evaluations", headers=headers["admin"]).json()["data"] == []
+    assert client.get("/api/v1/evaluations", headers=headers["screener"]).status_code == 403
+
+
+def register_version(client, headers, version="mv-test"):
+    import hashlib
+
+    registry = json.loads((ROOT / "algo/models/registry.json").read_text())["models"][0]
+    model = post(client, "/models", headers["admin"], {"name": "transunet"}, 201)
+    storage.put("bidlsp-model", f"test/{version}.pth", b"test-weight")
+    return post(
+        client,
+        f"/models/{model['id']}/versions",
+        headers["admin"],
+        {
+            "version": version,
+            "weights_key": f"test/{version}.pth",
+            "weights_sha256": hashlib.sha256(b"test-weight").hexdigest(),
+            "config": registry["config"],
+            "metrics": registry["metrics"],
+        },
+        201,
+    )
+
+
+def test_activation_requires_platform_evaluation(client, headers, monkeypatch):
+    from types import SimpleNamespace
+
+    from app import worker
+
+    h = headers["admin"]
+    version = register_version(client, headers)
+    monkeypatch.setattr(settings, "allow_unverified_model", False)
+    blocked = client.post(f"/api/v1/model-versions/{version['id']}/activate", headers=h)
+    assert blocked.status_code == 409 and blocked.json()["code"] == "MODEL_NOT_VERIFIED"
+
+    # 评估成功即回写指标与回归结论，激活门禁随之放行。
+    with SessionLocal() as db:
+        worker.apply_evaluation(
+            db,
+            SimpleNamespace(id="eval-1", model_version_id=version["id"]),
+            {"A2+A1": {"dice": 0.7240}, "A2+A1+A3": {"dice": 0.7087}},
+            {"result": "PASS", "comparable_split": True},
+        )
+        db.commit()
+    activated = post(client, f"/model-versions/{version['id']}/activate", h)
+    assert activated["status"] == "active" and "warning" not in activated
+    detail = client.get(f"/api/v1/model-versions/{version['id']}", headers=h).json()["data"]
+    assert detail["metrics_source"] == "platform_eval" and detail["evaluation_job_id"] == "eval-1"
+
+    # 回归 FAIL 即使开放放行也必须拦截。
+    with SessionLocal() as db:
+        db.get(m.ModelVersion, version["id"]).regression = {"result": "FAIL"}
+        db.commit()
+    monkeypatch.setattr(settings, "allow_unverified_model", True)
+    assert client.post(f"/api/v1/model-versions/{version['id']}/activate", headers=h).status_code == 409
+
+
+def test_batch_retry_reissues_only_failed_subtasks(client, headers, imported, monkeypatch):
+    import numpy as np
+    from app import worker
+    from conftest import png_bytes
+
+    dataset_id, images = imported
+    h = headers["admin"]
+    dataset_version = post(
+        client, "/dataset-versions", h, {"dataset_id": dataset_id, "version": "v-batch"}, 201
+    )
+    post(client, f"/dataset-versions/{dataset_version['id']}/freeze", h)
+    version = register_version(client, headers)
+    post(client, f"/model-versions/{version['id']}/activate", h)
+    batch = post(
+        client,
+        "/inference-batches",
+        h,
+        {"dataset_version_id": dataset_version["id"], "model_version_id": version["id"]},
+        202,
+    )
+
+    with SessionLocal() as db:
+        failed = list(
+            db.scalars(select(m.InferenceTask).where(m.InferenceTask.batch_id == batch["batch_id"]).limit(3))
+        )
+        failed_ids = [task.id for task in failed]
+        for task in failed:
+            task.status, task.error = "failed", {"code": "INFERENCE_FAILED"}
+        db.commit()
+
+    detail = client.get(f"/api/v1/inference-batches/{batch['batch_id']}", headers=h).json()["data"]
+    assert detail["failed"] == 3 and detail["total"] == len(images) and detail["succeeded"] == 0
+
+    retried = post(client, f"/inference-batches/{batch['batch_id']}/retry", h)
+    assert retried["retried"] == 3 and retried["in_flight"] == len(images) - 3
+    # 重投后旧失败尝试不计入进度，重复点击不会二次提交在途任务。
+    again = post(client, f"/inference-batches/{batch['batch_id']}/retry", h)
+    assert again["retried"] == 0 and again["in_flight"] == len(images)
+    with SessionLocal() as db:
+        attempts = list(db.scalars(select(m.InferenceTask).where(m.InferenceTask.id.in_(failed_ids))))
+        assert all(task.attempt == 1 and task.status == "failed" for task in attempts)
+        assert (
+            db.scalar(
+                select(m.InferenceTask)
+                .where(m.InferenceTask.batch_id == batch["batch_id"], m.InferenceTask.attempt == 2)
+                .limit(1)
+            )
+            is not None
+        )
+
+    def fake_prediction(db, task):
+        path = settings.work_dir / task.id / "mask.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(png_bytes(np.ones((12, 16), dtype="uint8") * 255))
+        return {
+            "result": {
+                "mask_rle": {"size": [12, 16], "counts": [0, 192]},
+                "prob_mean": 0.8,
+                "lesion_area_ratio": 1.0,
+                "quality_flags": ["AREA_TOO_LARGE"],
+                "elapsed_ms": 20,
+            },
+            "artifacts": {"mask": str(path), "mask_raw": str(path), "overlay": str(path)},
+        }
+
+    monkeypatch.setattr(worker, "run_prediction", fake_prediction)
+    drain_eager()
+    final = client.get(f"/api/v1/inference-batches/{batch['batch_id']}", headers=h).json()["data"]
+    assert final["status"] == "succeeded" and final["succeeded"] == len(images) and final["failed"] == 0

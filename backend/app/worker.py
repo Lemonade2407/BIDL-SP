@@ -270,6 +270,17 @@ def run_evaluation(db, job):
     return metrics, regression, raw
 
 
+def apply_evaluation(db, job, metrics, regression):
+    """Write measured metrics back so activation can gate on platform evaluation."""
+    version = get(db, m.ModelVersion, job.model_version_id)
+    version.metrics = metrics
+    version.regression = regression
+    version.metrics_source = "platform_eval"
+    version.evaluated_at = now()
+    version.evaluation_job_id = job.id
+    return version
+
+
 def execute_evaluation(job_id):
     with SessionLocal() as db:
         changed = db.execute(
@@ -288,6 +299,7 @@ def execute_evaluation(job_id):
                 "bidlsp-result", f"evaluations/{job.id}.json", json.dumps(raw).encode(), "application/json"
             )
             job.status = "succeeded"
+            apply_evaluation(db, job, metrics, regression)
         except Exception:
             db.rollback()
             job = get(db, m.EvaluationJob, job_id)

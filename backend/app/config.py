@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     device: str = "cpu"
     pdf_font_path: str = ""
     cors_origins: list[str] = ["http://localhost:5173"]
+    allow_registration: bool = True
+    # 默认阻止未在平台完成离线评估的模型版本被启用；仅演示环境可显式放行。
+    allow_unverified_model: bool = False
 
 
 settings = Settings()

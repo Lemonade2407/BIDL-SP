@@ -1,15 +1,53 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowRight, Cpu, DataLine, DocumentChecked, EditPen, Files, Picture, Refresh, Timer, View
 } from '@element-plus/icons-vue'
 import type { StatsOverview } from '@/types'
 import * as api from '@/api'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()
 const stats = ref<StatsOverview | null>(null)
 const loading = ref(false)
+const todo = ref({ screeningPending: 0, screeningMine: 0, annotationReview: 0, annotationMine: 0 })
+
+const canScreen = computed(() => auth.hasAny('screener', 'admin'))
+const canAnnotate = computed(() => auth.hasAny('annotator', 'admin', 'reviewer'))
+
+const todoItems = computed(() => {
+  const items: { label: string; count: number; path: string }[] = []
+  if (canScreen.value) {
+    items.push({ label: '待领取检查', count: todo.value.screeningPending, path: '/screening/worklist' })
+    items.push({ label: '我的进行中检查', count: todo.value.screeningMine, path: '/screening/worklist' })
+  }
+  if (canAnnotate.value) {
+    items.push({ label: '待审核标注', count: todo.value.annotationReview, path: '/annotation/tasks' })
+    items.push({ label: '我的标注任务', count: todo.value.annotationMine, path: '/annotation/tasks' })
+  }
+  return items
+})
+
+async function total(promise: Promise<unknown>) {
+  try {
+    const resp = await promise as { meta?: { total?: number } }
+    return resp.meta?.total ?? 0
+  } catch {
+    return 0
+  }
+}
+
+async function loadTodos() {
+  const [pending, mine, review, annotate] = await Promise.all([
+    canScreen.value ? total(api.getScreenTasks({ status: 'pending', page_size: 1 })) : 0,
+    canScreen.value ? total(api.getScreenTasks({ status: 'in_progress', assignee: 'me', page_size: 1 })) : 0,
+    canAnnotate.value ? total(api.getAnnotationTasks({ status: 'submitted', page_size: 1 })) : 0,
+    canAnnotate.value ? total(api.getAnnotationTasks({ status: 'in_progress', assignee: 'me', page_size: 1 })) : 0
+  ])
+  todo.value = { screeningPending: pending, screeningMine: mine, annotationReview: review, annotationMine: annotate }
+}
 
 const cards = [
   { key: 'images', label: '影像总量', icon: Picture, tone: 'teal', path: '/data/images' },
@@ -32,6 +70,7 @@ async function load() {
   try {
     const resp = await api.getStatsOverview()
     stats.value = (resp as { data: StatsOverview }).data
+    await loadTodos()
   } finally {
     loading.value = false
   }
@@ -103,6 +142,17 @@ function fmtReview() {
         </el-card>
       </el-col>
     </el-row>
+
+    <el-card v-if="todoItems.length" shadow="never" class="todo-card">
+      <template #header>我的待办</template>
+      <div class="todo-grid">
+        <button v-for="t in todoItems" :key="t.label" class="todo-item" type="button" @click="router.push(t.path)">
+          <span class="todo-num">{{ t.count }}</span>
+          <span class="todo-label">{{ t.label }}</span>
+          <el-icon class="arrow"><ArrowRight /></el-icon>
+        </button>
+      </div>
+    </el-card>
 
     <div class="lower-grid">
       <el-card shadow="never" class="quick-card">
@@ -190,6 +240,25 @@ function fmtReview() {
   margin-top: 4px;
 }
 
+.todo-card { margin-bottom: 16px; }
+.todo-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+
+.todo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid #e4efec;
+  border-radius: 13px;
+  background: #fbfefd;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.todo-item:hover { border-color: #b9dbd6; background: #f3fbf9; }
+.todo-num { color: var(--ink); font-size: 24px; font-weight: 750; line-height: 1; }
+.todo-label { flex: 1; color: var(--muted); font-size: 12px; text-align: left; }
+
 .quick-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 
 .quick-item {
@@ -241,9 +310,11 @@ function fmtReview() {
 
 @media (max-width: 1100px) {
   .lower-grid { grid-template-columns: 1fr; }
+  .todo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 640px) {
   .quick-grid { grid-template-columns: 1fr; }
+  .todo-grid { grid-template-columns: 1fr; }
 }
 </style>

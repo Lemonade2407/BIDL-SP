@@ -13,9 +13,40 @@ const props = defineProps<{
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let mask: Uint8Array | null = null
+let maskCanvas: HTMLCanvasElement | null = null
+let maskCtx: CanvasRenderingContext2D | null = null
+
+function maskSurface() {
+  if (!maskCanvas) maskCanvas = document.createElement('canvas')
+  if (maskCanvas.width !== props.imageWidth || maskCanvas.height !== props.imageHeight) {
+    maskCanvas.width = props.imageWidth
+    maskCanvas.height = props.imageHeight
+    maskCtx = maskCanvas.getContext('2d')
+  }
+  if (!maskCtx) maskCtx = maskCanvas.getContext('2d')
+  return maskCtx!
+}
+
+function renderMask() {
+  const ctx = maskSurface()
+  const data = ctx.createImageData(props.imageWidth, props.imageHeight)
+  if (mask) {
+    const pixels = data.data
+    for (let i = 0; i < mask.length; i++) {
+      if (!mask[i]) continue
+      const offset = i * 4
+      pixels[offset] = 244
+      pixels[offset + 1] = 67
+      pixels[offset + 2] = 54
+      pixels[offset + 3] = 255
+    }
+  }
+  ctx.putImageData(data, 0, 0)
+}
 
 function loadMask() {
   mask = props.rle ? decodeRle(props.rle) : null
+  renderMask()
   draw()
 }
 
@@ -33,27 +64,21 @@ function draw() {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, cw, ch)
-  if (!mask) return
+  if (!mask || !maskCanvas) return
   ctx.save()
   ctx.translate(props.view.tx, props.view.ty)
   ctx.scale(props.view.scale, props.view.scale)
   ctx.imageSmoothingEnabled = false
-  const px = Math.max(1, 1 / props.view.scale)
-  ctx.fillStyle = `rgba(244, 67, 54, ${props.opacity})`
-  for (let y = 0; y < props.imageHeight; y++) {
-    for (let x = 0; x < props.imageWidth; x++) {
-      if (mask[y * props.imageWidth + x]) {
-        ctx.fillRect(x, y, px, px)
-      }
-    }
-  }
+  ctx.globalAlpha = props.opacity
+  ctx.drawImage(maskCanvas, 0, 0, props.imageWidth, props.imageHeight)
   ctx.restore()
 }
 
-watch(() => [props.rle, props.opacity, props.view.scale, props.view.tx, props.view.ty], () => {
-  if (props.rle !== undefined) loadMask()
-  else draw()
-})
+watch(() => props.rle, loadMask)
+watch(
+  () => [props.opacity, props.view.scale, props.view.tx, props.view.ty],
+  () => draw()
+)
 
 onMounted(loadMask)
 </script>

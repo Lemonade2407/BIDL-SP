@@ -173,9 +173,21 @@ def screen_tasks(
         if p["priority"] not in ("1", "2", "3", "4", "5"):
             raise APIError(422, "priority 必须为 1–5")
         stmt = stmt.where(m.ScreenTask.priority == int(p["priority"]))
-    return page(
-        request, db, stmt, m.ScreenTask, lambda x: {**serialize(x), "assignee": user_ref(db, x.assignee_id)}
-    )
+
+    def render(task):
+        data = {**serialize(task), "assignee": user_ref(db, task.assignee_id)}
+        study = db.get(m.Study, task.study_id)
+        if study:
+            patient = db.get(m.Patient, study.patient_id)
+            data.update(
+                study_no=study.study_no,
+                patient_no=patient.patient_no if patient else None,
+                device=study.device,
+                study_status=study.status,
+            )
+        return data
+
+    return page(request, db, stmt, m.ScreenTask, render)
 
 
 @router.post("/screen-tasks/{id}/claim")
@@ -186,6 +198,43 @@ def screen_claim(
     get(db, m.Study, obj.study_id).status = "in_progress"
     audit(db, user, "screen.claim", obj, request)
     return reply(request, serialize(obj))
+
+
+@router.post("/screen-tasks/{id}/release")
+def screen_release(
+    id: str, request: Request, db=Depends(get_db, scope="function"), user=Depends(require("screening:manage"))
+):
+    obj = get(db, m.ScreenTask, id, lock=True)
+    if obj.status != "in_progress" or (obj.assignee_id != user.id and "admin" not in user.roles):
+        raise APIError(409, "只能释放本人进行中的检查")
+    obj.status, obj.assignee_id, obj.claimed_at = "pending", None, None
+    get(db, m.Study, obj.study_id).status = "pending"
+    audit(db, user, "screen.release", obj, request)
+    db.flush()
+    return reply(request, serialize(obj))
+
+
+@router.post("/screen-tasks/{id}/reassign")
+def screen_reassign(
+    id: str,
+    body: s.ScreenReassign,
+    request: Request,
+    db=Depends(get_db, scope="function"),
+    user=Depends(require("user:manage")),
+):
+    obj = get(db, m.ScreenTask, id, lock=True)
+    if obj.status == "done":
+        raise APIError(409, "已完成的检查不能改派")
+    target = get(db, m.User, body.assignee_id)
+    if target.status != "active":
+        raise APIError(422, "被指派人未启用")
+    if not {"screener", "admin"} & set(target.roles):
+        raise APIError(422, "被指派人没有筛查权限")
+    obj.assignee_id, obj.status, obj.claimed_at = target.id, "in_progress", now()
+    get(db, m.Study, obj.study_id).status = "in_progress"
+    audit(db, user, "screen.reassign", obj, request, {"assignee_id": target.id})
+    db.flush()
+    return reply(request, {**serialize(obj), "assignee": user_ref(db, obj.assignee_id)})
 
 
 @router.post("/studies/{id}/reviews")
@@ -229,6 +278,7 @@ def study_review(
             ),
             user,
             enforce_owner=False,
+            link_task=False,
         )
     elif body.decision == "reject":
         if not (body.comment or "").strip():
@@ -252,6 +302,7 @@ def study_review(
     db.flush()
     if body.decision != "reject":
         task.status, task.finished_at = "done", now()
+        study.status = "reviewed"
     audit(db, user, "study.review", obj, request, {"study_id": study.id, "decision": body.decision})
     return reply(
         request, {**serialize(obj), "reviewed_by": user_ref(db, user.id), "reviewed_at": obj.created_at}
@@ -266,6 +317,29 @@ def templates(request: Request, db=Depends(get_db, scope="function"), user=Depen
             raise APIError(422, "active 必须为 true/false")
         stmt = stmt.where(m.ReportTemplate.active == (request.query_params["active"] == "true"))
     return page(request, db, stmt, m.ReportTemplate)
+
+
+@router.post("/report-templates/preview")
+def template_preview(
+    body: s.TemplatePreview,
+    request: Request,
+    user=Depends(require("report:template")),
+):
+    validate_template(body.body, body.variables)
+    sample = {
+        "patient_no": "P0001",
+        "study_no": "US20261106001",
+        "study_date": "2026-11-06",
+        "model_version": "seed0",
+        "lesion_area_ratio": "0.0423",
+        "review_conclusion": "accept",
+        "reviewer": "演示审核医师",
+        "signed_at": "2026-11-06T10:00:00+08:00",
+        "findings": "（示例）左乳外上象限可见低回声区。",
+        "impression": "（示例）考虑良性病变可能，建议随访。",
+        "recommendation": "（示例）结合临床与其他检查。",
+    }
+    return reply(request, {"html": render(body.body, sample)})
 
 
 @router.post("/report-templates", status_code=201)
@@ -298,6 +372,24 @@ def template_update(
     audit(db, user, "report.template.update", obj, request)
     db.flush()
     return reply(request, serialize(obj))
+
+
+def draft_content(patient, study, model, result, review):
+    """Deterministic AI draft; the doctor must review and edit before signing."""
+    area = f"{result.lesion_area_ratio * 100:.2f}%" if result else "未知"
+    flags = "、".join(result.quality_flags) if result and result.quality_flags else "无"
+    version = model.version if model else "未指定"
+    conclusion = review.decision if review else "未复核"
+    return {
+        "findings": (
+            f"[AI 草稿，请医生核对] 模型 {version} 提示病灶面积占比 {area}，质量标记：{flags}。"
+            f"患者编号 {patient.patient_no}，检查号 {study.study_no}。"
+        ),
+        "impression": (
+            f"[AI 草稿，请医生核对] 模型结果需结合影像所见综合判断；当前医生复核结论为 {conclusion}。"
+        ),
+        "recommendation": "建议结合临床与其他影像学检查，由专业医师综合评估；本报告仅供科研/教学使用。",
+    }
 
 
 @router.post("/reports", status_code=201)
@@ -353,13 +445,16 @@ def report_create(
         "template_body": template.body,
         "disclaimer": DISCLAIMER,
     }
+    content = body.content.model_dump()
+    if not any(value.strip() for value in content.values()):
+        content = draft_content(patient, study, model, result, review)
     obj = m.Report(
         study_id=study.id,
         inference_result_id=result.id if result else None,
         template_id=template.id,
-        content=body.content.model_dump(),
+        content=content,
         snapshot=snapshot,
-        rendered_html=render(template.body, {**snapshot, **body.content.model_dump()}),
+        rendered_html=render(template.body, {**snapshot, **content}),
         version=latest.version + 1 if latest else 1,
         author_id=user.id,
     )
@@ -367,6 +462,19 @@ def report_create(
     db.flush()
     audit(db, user, "report.save", obj, request)
     return reply(request, report_json(db, obj), 201)
+
+
+@router.get("/reports")
+def reports(
+    request: Request,
+    db=Depends(get_db, scope="function"),
+    user=Depends(require("report:draft", "report:sign")),
+):
+    stmt = select(m.Report)
+    for field in ("study_id", "status", "author_id", "reviewer_id"):
+        if request.query_params.get(field):
+            stmt = stmt.where(getattr(m.Report, field) == request.query_params[field])
+    return page(request, db, stmt, m.Report, lambda x: report_json(db, x))
 
 
 @router.get("/reports/{id}")

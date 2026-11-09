@@ -1,18 +1,19 @@
 import hashlib
 import tempfile
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from . import models as m
 from . import schemas as s
 from .common import APIError, audit, get, page, queue, remember, replay, reply, serialize
 from .config import settings
 from .data_service import freeze, validate_archive
-from .db import get_db, uid
+from .db import get_db, now, uid
 from .security import current_user, has, require
 from .storage import storage
 
@@ -27,6 +28,7 @@ def image_json(db, image):
     result.update(
         mask_available=bool(image.mask_object_key),
         annotation_status=annotation.status if annotation else "none",
+        excluded=bool(image.exclude_reason),
         thumbnail_url=storage.url("bidlsp-curated", image.cache_key) if image.cache_key else None,
         preview_url=storage.url("bidlsp-curated", image.preview_key) if image.preview_key else None,
     )
@@ -140,6 +142,12 @@ def images(request: Request, db=Depends(get_db, scope="function"), user=Depends(
                 )
             )
         )
+    if p.get("unassigned") == "true":
+        stmt = stmt.where(m.Image.study_id.is_(None))
+    if p.get("exclude") == "true":
+        stmt = stmt.where(m.Image.exclude_reason.is_not(None))
+    elif p.get("exclude") == "false":
+        stmt = stmt.where(m.Image.exclude_reason.is_(None))
     if p.get("annotation_status"):
         latest = (
             select(m.Annotation.status)
@@ -156,11 +164,108 @@ def images(request: Request, db=Depends(get_db, scope="function"), user=Depends(
     return page(request, db, stmt, m.Image, lambda x: image_json(db, x))
 
 
+@router.get("/studies")
+def studies(
+    request: Request, db=Depends(get_db, scope="function"), user=Depends(require("image:read"))
+):
+    p = request.query_params
+    try:
+        number, size = int(p.get("page", 1)), int(p.get("page_size", 20))
+        if number < 1 or size < 1 or size > 100:
+            raise ValueError()
+    except ValueError:
+        raise APIError(422, "page >= 1; page_size between 1 and 100") from None
+    stmt = select(m.Study, m.Patient).join(m.Patient, m.Patient.id == m.Study.patient_id)
+    if p.get("q"):
+        like = "%" + p["q"] + "%"
+        stmt = stmt.where(or_(m.Study.study_no.like(like), m.Patient.patient_no.like(like)))
+    if p.get("status"):
+        stmt = stmt.where(m.Study.status == p["status"])
+    for field, lower in (("from", True), ("to", False)):
+        if p.get(field):
+            try:
+                stamp = date.fromisoformat(p[field])
+            except ValueError:
+                raise APIError(422, "日期必须为 YYYY-MM-DD") from None
+            stmt = stmt.where(m.Study.study_date >= stamp if lower else m.Study.study_date <= stamp)
+    total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))
+    rows = db.execute(
+        stmt.order_by(m.Study.study_date.desc(), m.Study.created_at.desc())
+        .offset((number - 1) * size)
+        .limit(size)
+    ).all()
+    ids = [study.id for study, _ in rows]
+    counts = dict(
+        db.execute(
+            select(m.Image.study_id, func.count())
+            .where(m.Image.study_id.in_(ids))
+            .group_by(m.Image.study_id)
+        ).all()
+    ) if ids else {}
+    tasks = {
+        t.study_id: t
+        for t in db.scalars(select(m.ScreenTask).where(m.ScreenTask.study_id.in_(ids)))
+    } if ids else {}
+    reports = {}
+    for report in db.scalars(
+        select(m.Report).where(m.Report.study_id.in_(ids)).order_by(m.Report.version)
+    ) if ids else []:
+        reports[report.study_id] = report
+    data = []
+    for study, patient in rows:
+        task, report = tasks.get(study.id), reports.get(study.id)
+        data.append(
+            {
+                **serialize(study),
+                "patient_no": patient.patient_no,
+                "gender": patient.gender,
+                "birth_year": patient.birth_year,
+                "image_count": counts.get(study.id, 0),
+                "screen_task": {
+                    "id": task.id,
+                    "status": task.status,
+                    "priority": task.priority,
+                }
+                if task
+                else None,
+                "report": {"id": report.id, "status": report.status, "version": report.version}
+                if report
+                else None,
+            }
+        )
+    return reply(request, data, page=number, page_size=size, total=total)
+
+
 @router.get("/images/{id}")
 def image_detail(
     id: str, request: Request, db=Depends(get_db, scope="function"), user=Depends(require("image:read"))
 ):
     return reply(request, image_json(db, get(db, m.Image, id)))
+
+
+@router.post("/images/{id}/exclude")
+def exclude_image(
+    id: str,
+    body: s.ImageExclude,
+    request: Request,
+    db=Depends(get_db, scope="function"),
+    user=Depends(require("dataset:write")),
+):
+    image = get(db, m.Image, id, lock=True)
+    reason = (body.exclude_reason or "").strip() or None
+    image.exclude_reason = reason
+    image.excluded_by = user.id if reason else None
+    image.excluded_at = now() if reason else None
+    audit(
+        db,
+        user,
+        "image.exclude" if reason else "image.restore",
+        image,
+        request,
+        {"exclude_reason": reason},
+    )
+    db.flush()
+    return reply(request, image_json(db, image))
 
 
 @router.get("/images/{id}/file")
@@ -228,6 +333,19 @@ def freeze_version(
     id: str, request: Request, db=Depends(get_db, scope="function"), user=Depends(require("dataset:write"))
 ):
     obj = freeze(db, get(db, m.DatasetVersion, id, lock=True), user, request)
+    return reply(request, version_json(obj))
+
+
+@router.post("/dataset-versions/{id}/archive")
+def archive_version(
+    id: str, request: Request, db=Depends(get_db, scope="function"), user=Depends(require("dataset:write"))
+):
+    obj = get(db, m.DatasetVersion, id, lock=True)
+    if obj.status != "frozen":
+        raise APIError(409, "只能归档已冻结版本")
+    obj.status = "archived"
+    audit(db, user, "dataset.archive", obj, request)
+    db.flush()
     return reply(request, version_json(obj))
 
 

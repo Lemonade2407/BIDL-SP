@@ -12,12 +12,25 @@ const flagText: Record<string, string> = {
   MASK_MISSING: '掩膜缺失'
 }
 
+const foreground = computed(() => {
+  const counts = props.result?.mask_rle?.counts
+  if (!counts?.length) return 0
+  return counts.slice(1).filter((_, index) => index % 2 === 0).reduce((sum, value) => sum + value, 0)
+})
+
+const diameter = computed(() => {
+  if (!foreground.value) return '—'
+  return (2 * Math.sqrt(foreground.value / Math.PI)).toFixed(1) + ' px'
+})
+
 const rows = computed(() => {
   const r = props.result
   if (!r) return []
   return [
     { label: '前景平均概率', value: (r.prob_mean * 100).toFixed(1) + '%' },
     { label: '病灶面积占比', value: (r.lesion_area_ratio * 100).toFixed(2) + '%' },
+    { label: '病灶像素面积', value: foreground.value ? foreground.value.toLocaleString() + ' px²' : '—' },
+    { label: '等效直径', value: diameter.value },
     { label: '推理耗时', value: r.elapsed_ms + ' ms' },
     { label: '质量标记', value: r.quality_flags.length ? r.quality_flags.map((f) => flagText[f] ?? f).join('、') : '无' }
   ]

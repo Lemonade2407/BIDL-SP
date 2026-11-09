@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import type { Image, RleMask } from '@/types'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import type { Image, InferenceTask, RleMask } from '@/types'
 import * as api from '@/api'
+import { usePoll } from '@/composables/usePoll'
+import { useAuthStore } from '@/stores/auth'
 import ImageViewer from '@/components/ImageViewer.vue'
 import MaskCanvas from '@/components/MaskCanvas.vue'
 import ResultPanel from '@/components/ResultPanel.vue'
 
 const route = useRoute()
+const auth = useAuthStore()
 const image = ref<Image | null>(null)
 const rle = ref<RleMask | null>(null)
 const tool = ref<'brush' | 'eraser' | 'polygon'>('brush')
@@ -16,17 +19,60 @@ const brushSize = ref(4)
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
 const canvasRef = ref<InstanceType<typeof MaskCanvas> | null>(null)
 const annotationId = ref('')
+const source = ref<'manual' | 'preannot'>('manual')
+const preannotLoading = ref(false)
+const { poll } = usePoll()
 
 onMounted(async () => {
   const resp = await api.getImage(route.params.imageId as string)
   image.value = (resp as { data: Image }).data
-  const hist = await api.getAnnotationHistory(route.params.imageId as string)
-  const anns = (hist as { data: any[] }).data
-  if (anns.length) rle.value = anns[0].mask_rle ?? null
+  const hist = await api.getAnnotationHistory(route.params.imageId as string) as { data: any[] }
+  const anns = hist.data
+  const mine = anns.find((item) => item.annotator?.id === auth.user?.id)
+  const approved = anns.find((item) => item.status === 'approved')
+  const reference = mine ?? approved ?? anns[0]
+  if (reference) {
+    rle.value = reference.mask_rle ?? null
+    if (reference.source === 'preannot' || reference.source === 'model') source.value = 'preannot'
+    annotationId.value = reference.status === 'draft' && reference.annotator?.id === auth.user?.id ? reference.id : ''
+  }
 })
 
 function onMask(v: RleMask | null) {
   rle.value = v
+}
+
+async function preannotate() {
+  if (!image.value) return
+  if (rle.value) {
+    await ElMessageBox.confirm('当前掩膜将被模型结果覆盖，是否继续？', 'AI 预标注', { type: 'warning' })
+  }
+  preannotLoading.value = true
+  try {
+    const created = await api.createInference({ image_id: image.value.id }) as {
+      data: { task_id?: string; id?: string }
+    }
+    const taskId = created.data.task_id || created.data.id
+    if (!taskId) throw new Error('推理任务未返回 task_id')
+    const outcome = await poll(
+      async () => (await api.getInference(taskId) as { data: InferenceTask }).data,
+      (task) => task.status === 'succeeded' || task.status === 'failed',
+      { interval: 1000, attempts: 60 }
+    )
+    const task = outcome.value
+    if (!outcome.done || !task) throw new Error('预标注超时，请稍后重试')
+    if (task.status === 'failed') {
+      const detail: any = task.error
+      throw new Error(detail?.message || detail || '推理失败')
+    }
+    rle.value = task.result?.mask_rle ?? null
+    source.value = 'preannot'
+    ElMessage.success(task.result?.mask_rle ? '预标注完成，可继续修边' : '模型判断为无病灶（空掩膜）')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || error?.message || '预标注失败')
+  } finally {
+    preannotLoading.value = false
+  }
 }
 
 async function save() {
@@ -40,10 +86,10 @@ async function save() {
     image_id: image.value.id,
     mask_rle: mask,
     is_empty: !hasForeground,
-    source: 'manual'
+    source: source.value
   }) as { data: { id: string } }
   annotationId.value = resp.data.id
-  ElMessage.success('标注已保存（草稿）')
+  ElMessage.success(source.value === 'preannot' ? '预标注结果已保存（草稿）' : '标注已保存（草稿）')
 }
 
 async function submit() {
@@ -75,6 +121,9 @@ async function submit() {
         <el-button size="small" @click="canvasRef?.clear()">清空</el-button>
         <el-button v-if="tool === 'polygon'" size="small" type="warning" @click="canvasRef?.closePolygon()">闭合多边形</el-button>
         <span class="flex" />
+        <el-button type="warning" plain :loading="preannotLoading" @click="preannotate">
+          {{ preannotLoading ? '预标注中…' : 'AI 预标注' }}
+        </el-button>
         <el-button type="primary" @click="save">保存草稿</el-button>
         <el-button type="success" @click="submit">提交审核</el-button>
       </div>

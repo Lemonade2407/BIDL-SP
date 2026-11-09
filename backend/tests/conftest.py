@@ -16,6 +16,8 @@ os.environ.update(
     TASK_EAGER="true",
     RATE_LIMIT_BACKEND="memory",
     PUBLIC_API_URL="http://testserver",
+    # 测试权重是占位文件，无法真正跑离线评估；显式放行以复用既有夹具。
+    ALLOW_UNVERIFIED_MODEL="true",
 )
 
 import numpy as np

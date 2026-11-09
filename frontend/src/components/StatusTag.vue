@@ -24,6 +24,7 @@ const MAP: Record<string, { type: 'success' | 'info' | 'warning' | 'danger' | 'p
   queued: { type: 'info', label: '排队中' },
   running: { type: 'warning', label: '运行中' },
   succeeded: { type: 'success', label: '成功' },
+  partial: { type: 'warning', label: '部分成功' },
   done: { type: 'success', label: '已完成' }
 }
 

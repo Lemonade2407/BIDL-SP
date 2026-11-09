@@ -42,6 +42,8 @@ def login(body: s.Login, request: Request, db=Depends(get_db, scope="function"))
 
 @router.post("/auth/register", status_code=201)
 def register(body: s.Register, request: Request, db=Depends(get_db, scope="function")):
+    if not settings.allow_registration:
+        raise APIError(403, "自助注册已关闭，请联系管理员开通账号")
     limit_register(request.client.host)
     if db.scalar(select(m.User).where(m.User.username == body.username)):
         raise APIError(409, "用户名已存在")

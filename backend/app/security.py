@@ -25,7 +25,7 @@ PERMISSIONS = {
         "inference:create",
         "stats:read",
     },
-    "annotator": {"image:read", "annotation:edit", "stats:read"},
+    "annotator": {"image:read", "annotation:edit", "inference:create", "stats:read"},
     "screener": {"image:read", "inference:create", "screening:manage", "report:draft", "stats:read"},
     "reviewer": {"image:read", "annotation:review", "report:sign", "stats:read"},
 }

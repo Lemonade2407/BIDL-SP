@@ -312,7 +312,17 @@ python backend/scripts/seed_demo.py
 
 报告先完成筛查复核，再起草/保存新版本、提交、签发。审核人和起草人分离；管理员自签必须提供理由并单独审计。报告保存模板及血缘快照，已签发 PDF 不重新渲染；草稿预览有“未签发”水印。模板只接受白名单标签和简单变量，禁止执行 Jinja 循环、函数或属性访问。PDF 使用 ReportLab；Compose 内嵌文泉驿字体，Windows 自动使用系统宋体，可用 `PDF_FONT_PATH` 指定授权字体。
 
-JWT 8 小时，登出吊销 jti，改密/角色变更吊销旧令牌；接口权限从数据库实时读取。原图仅 admin/data_engineer，manifest 导出仅 admin；预览/掩膜走 300 秒签名 URL。DICOM 不在首版范围内。归档冻结版本：`docker compose --env-file deploy/.env -f deploy/docker-compose.yml run --rm init python -m app.cli archive-version <UUID>`，只改变生命周期状态，manifest、成员和标注引用保持不变。
+JWT 8 小时，登出吊销 jti，改密/角色变更吊销旧令牌；接口权限从数据库实时读取。原图仅 admin/data_engineer，manifest 导出仅 admin；预览/掩膜走 300 秒签名 URL。DICOM 不在首版范围内。归档冻结版本：界面「数据集版本 → 归档」或 `POST /api/v1/dataset-versions/{id}/archive`（命令行等价：`docker compose --env-file deploy/.env -f deploy/docker-compose.yml run --rm init python -m app.cli archive-version <UUID>`），只改变生命周期状态，manifest、成员和标注引用保持不变。
+
+运维命令（在 `init` 容器或后端环境中执行）：
+
+| 命令 | 用途 |
+|---|---|
+| `python -m app.cli preflight --production` | 上线自检（演示口令/注册开关/CORS/TLS/JWT/PDF 字体），FAIL 时退出码 1 |
+| `python -m app.cli reset-demo-tasks --yes` | 把未完成标注/筛查任务与待审核标注恢复到演示基线，已完成数据不变 |
+| `python -m app.cli export-audit --out audit.jsonl [--before ISO]` | 导出审计 JSONL（审计表只追加，不删除） |
+
+自助注册可通过 `ALLOW_REGISTRATION=false` 关闭。CI 除后端测试、前端类型检查/构建与 Compose 冒烟外，还会用 Playwright 验证登录与关键页面（`backend/scripts/e2e_ui.py`）。
 
 ### 6.7 部署冒烟、故障处理与备份
 

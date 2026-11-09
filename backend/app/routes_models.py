@@ -4,7 +4,9 @@ from sqlalchemy import select, update
 from . import models as m
 from . import schemas as s
 from .common import APIError, audit, fingerprint, get, page, queue, remember, replay, reply, serialize
+from .config import settings
 from .db import get_db, now
+from .routes_annotations import save_annotation
 from .security import current_user, require
 from .storage import storage
 
@@ -38,7 +40,7 @@ def resolve_model(db, id=None):
     return obj
 
 
-def new_inference(db, image_id, model, params, user, request, batch_id=None):
+def new_inference(db, image_id, model, params, user, request, batch_id=None, attempt=1):
     image = get(db, m.Image, image_id)
     merged = {k: model.config[k] for k in ("tta", "threshold", "postproc", "min_area")}
     merged.update(params.model_dump(exclude_none=True))
@@ -51,6 +53,7 @@ def new_inference(db, image_id, model, params, user, request, batch_id=None):
         params=merged,
         requested_by=user.id,
         batch_id=batch_id,
+        attempt=attempt,
         cache_key=key,
     )
     db.add(obj)
@@ -124,12 +127,34 @@ def version(id: str, request: Request, db=Depends(get_db, scope="function"), use
     return reply(request, serialize(get(db, m.ModelVersion, id)))
 
 
+def verification_blocker(version):
+    """Return why a version is not verifiable, or None when it may be activated."""
+    if not version.metrics:
+        return "缺少指标：请先完成平台离线评估或登记指标"
+    if (version.regression or {}).get("result") == "FAIL":
+        return "该版本的平台评估回归未通过（FAIL）"
+    if version.metrics_source != "platform_eval":
+        return "该版本尚未在平台完成离线评估，指标仅来自注册登记"
+    return None
+
+
 @router.post("/model-versions/{id}/activate")
 def activate(
     id: str, request: Request, db=Depends(get_db, scope="function"), user=Depends(require("model:manage"))
 ):
     obj = get(db, m.ModelVersion, id)
     get(db, m.Model, obj.model_id, lock=True)
+    blocker = verification_blocker(obj)
+    failed_regression = (obj.regression or {}).get("result") == "FAIL"
+    override = bool(blocker) and not failed_regression and settings.allow_unverified_model
+    if blocker and not override:
+        hint = "" if failed_regression else "；如为演示确需启用，请设置 ALLOW_UNVERIFIED_MODEL=true"
+        raise APIError(409, blocker + hint, "MODEL_NOT_VERIFIED")
+    previous = db.scalar(
+        select(m.ModelVersion).where(
+            m.ModelVersion.model_id == obj.model_id, m.ModelVersion.status == "active"
+        )
+    )
     db.execute(
         update(m.ModelVersion)
         .where(m.ModelVersion.model_id == obj.model_id, m.ModelVersion.status == "active")
@@ -137,11 +162,22 @@ def activate(
     )
     db.flush()
     obj.status, obj.activated_at = "active", now()
-    audit(db, user, "model.activate", obj, request)
+    audit(
+        db,
+        user,
+        "model.activate",
+        obj,
+        request,
+        {
+            "from_version": previous.id if previous and previous.id != obj.id else None,
+            "override": override,
+            "blocker": blocker,
+        },
+    )
     db.flush()
     result = serialize(obj)
-    if not obj.metrics:
-        result["warning"] = "此版本尚未登记评估指标"
+    if override:
+        result["warning"] = blocker
     return reply(request, result)
 
 
@@ -198,12 +234,21 @@ def batch(
     return reply(request, result, 202)
 
 
+def latest_attempts(db, batch_id):
+    """One task per image: retries create attempt+1 instead of overwriting history."""
+    latest = {}
+    for task in db.scalars(select(m.InferenceTask).where(m.InferenceTask.batch_id == batch_id)):
+        if task.image_id not in latest or task.attempt > latest[task.image_id].attempt:
+            latest[task.image_id] = task
+    return latest
+
+
 @router.get("/inference-batches/{id}")
 def batch_detail(
     id: str, request: Request, db=Depends(get_db, scope="function"), user=Depends(require("inference:create"))
 ):
     obj = get(db, m.InferenceBatch, id)
-    states = list(db.scalars(select(m.InferenceTask.status).where(m.InferenceTask.batch_id == id)))
+    states = [task.status for task in latest_attempts(db, id).values()]
     total, done, failed = len(states), states.count("succeeded"), states.count("failed")
     status = "queued" if all(s == "queued" for s in states) else "running"
     if done + failed == total:
@@ -219,6 +264,114 @@ def batch_detail(
             "progress": (done + failed) / total if total else 1,
         },
     )
+
+
+@router.post("/inference-batches/{id}/retry")
+def batch_retry(
+    id: str, request: Request, db=Depends(get_db, scope="function"), user=Depends(require("inference:create"))
+):
+    batch = get(db, m.InferenceBatch, id, lock=True)
+    model = get(db, m.ModelVersion, batch.model_version_id)
+    params = s.InferenceParams(**batch.params)
+    retried, in_flight = [], 0
+    for image_id, task in latest_attempts(db, batch.id).items():
+        if task.status == "failed":
+            new_inference(
+                db,
+                image_id,
+                model,
+                params,
+                user,
+                request,
+                batch_id=batch.id,
+                attempt=task.attempt + 1,
+            )
+            retried.append(image_id)
+        elif task.status in ("queued", "running"):
+            in_flight += 1
+    audit(
+        db,
+        user,
+        "inference.batch.retry",
+        batch,
+        request,
+        {"retried": len(retried), "in_flight": in_flight},
+    )
+    db.flush()
+    return reply(request, {"batch_id": batch.id, "retried": len(retried), "in_flight": in_flight})
+
+
+@router.post("/inference-batches/{id}/to-annotations", status_code=201)
+def batch_to_annotations(
+    id: str,
+    request: Request,
+    db=Depends(get_db, scope="function"),
+    user=Depends(require("annotation:manage")),
+):
+    batch = get(db, m.InferenceBatch, id)
+    created, skipped, task_ids = 0, 0, []
+    tasks = list(
+        db.scalars(
+            select(m.InferenceTask).where(
+                m.InferenceTask.batch_id == batch.id, m.InferenceTask.status == "succeeded"
+            )
+        )
+    )
+    for task in tasks:
+        result = db.scalar(select(m.InferenceResult).where(m.InferenceResult.task_id == task.id))
+        if result is None:
+            skipped += 1
+            continue
+        image = get(db, m.Image, task.image_id)
+        if db.scalar(
+            select(m.Annotation.id).where(
+                m.Annotation.image_id == image.id, m.Annotation.status.in_(["pending", "approved"])
+            )
+        ):
+            skipped += 1
+            continue
+        open_task = db.scalar(
+            select(m.AnnotationTask)
+            .where(m.AnnotationTask.image_id == image.id, m.AnnotationTask.status != "approved")
+            .with_for_update()
+        )
+        if open_task and open_task.annotation_id:
+            skipped += 1
+            continue
+        annotation = save_annotation(
+            db,
+            s.AnnotationCreate(
+                image_id=image.id,
+                mask_rle=result.mask_rle,
+                is_empty=sum(result.mask_rle["counts"][1::2]) == 0,
+                source="model",
+                note="批量推理预标注；请标注员核对修边",
+            ),
+            user,
+            enforce_owner=False,
+            link_task=False,
+        )
+        if open_task:
+            open_task.annotation_id = annotation.id
+        else:
+            open_task = m.AnnotationTask(
+                image_id=image.id,
+                dataset_version_id=batch.dataset_version_id,
+                annotation_id=annotation.id,
+            )
+            db.add(open_task)
+            db.flush()
+            task_ids.append(open_task.id)
+        audit(
+            db,
+            user,
+            "annotation.preannot.batch",
+            annotation,
+            request,
+            {"batch_id": batch.id, "task_id": open_task.id},
+        )
+        created += 1
+    return reply(request, {"created": created, "skipped": skipped, "task_ids": task_ids}, 201)
 
 
 @router.post("/evaluations", status_code=202)
@@ -239,6 +392,17 @@ def evaluation(
     queue(db, "evaluation", obj)
     audit(db, user, "evaluation.create", obj, request)
     return reply(request, {"evaluation_id": obj.id, "status": obj.status}, 202)
+
+
+@router.get("/evaluations")
+def evaluations(
+    request: Request, db=Depends(get_db, scope="function"), user=Depends(require("model:manage"))
+):
+    stmt = select(m.EvaluationJob)
+    for field in ("model_version_id", "dataset_version_id", "status"):
+        if request.query_params.get(field):
+            stmt = stmt.where(getattr(m.EvaluationJob, field) == request.query_params[field])
+    return page(request, db, stmt, m.EvaluationJob)
 
 
 @router.get("/evaluations/{id}")

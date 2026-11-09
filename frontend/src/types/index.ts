@@ -85,9 +85,17 @@ export interface Image {
   source: ImageSource
   mask_available: boolean
   annotation_status?: AnnotationStatus | null
+  excluded?: boolean
+  exclude_reason?: string | null
   thumbnail_url?: string | null
   preview_url?: string | null
   created_at?: string
+}
+
+export interface ImportJobReport {
+  failures?: { file: string; reason: string }[]
+  warnings?: { file: string; reason: string; relative_path?: string; class_conflict?: boolean }[]
+  error?: string
 }
 
 export interface ImportJob {
@@ -98,7 +106,7 @@ export interface ImportJob {
   success: number
   failed: number
   duplicate: number
-  report?: Record<string, unknown> | null
+  report?: ImportJobReport | null
   started_at?: string | null
   finished_at?: string | null
 }
@@ -152,6 +160,12 @@ export interface AnnotationTask {
   assignee?: UserRef | null
   status: AnnotationTaskStatus
   priority: number
+  required_annotators?: number
+  consistency?: { iou: number; threshold: number; auto: boolean; versions?: number[] } | null
+  participants?: UserRef[]
+  submitted_count?: number
+  filename?: string
+  class_label?: ClassLabel | null
   annotation_id?: string | null
   claimed_at?: string | null
   finished_at?: string | null
@@ -201,6 +215,42 @@ export interface InferenceTask {
   finished_at?: string | null
 }
 
+export interface InferenceBatch {
+  id: string
+  dataset_version_id: string
+  model_version_id: string
+  params?: Record<string, unknown>
+  status: InferenceBatchStatus
+  total: number
+  succeeded: number
+  failed: number
+  progress: number
+  created_at?: string
+}
+
+export interface EvaluationJob {
+  id: string
+  model_version_id: string
+  dataset_version_id: string
+  status: EvalJobStatus
+  metrics?: Record<string, any> | null
+  regression?: Record<string, any> | null
+  error?: Record<string, any> | null
+  result_key?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  created_at?: string
+}
+
+export interface Patient {
+  id: string
+  patient_no: string
+  gender: Gender
+  birth_year?: number | null
+  remark?: string | null
+  created_at?: string
+}
+
 export interface PatientRef {
   id?: string
   patient_no: string
@@ -237,8 +287,29 @@ export interface ScreenTask {
   assignee?: UserRef | null
   status: ScreenTaskStatus
   priority: number
+  study_no?: string
+  patient_no?: string
+  device?: string | null
+  study_status?: string
   claimed_at?: string | null
   finished_at?: string | null
+  created_at?: string
+}
+
+export interface StudyRow {
+  id: string
+  study_no: string
+  patient_no: string
+  gender: Gender
+  birth_year?: number | null
+  modality: Modality
+  device?: string | null
+  study_date: string
+  indication?: string | null
+  status: string
+  image_count: number
+  screen_task?: { id: string; status: ScreenTaskStatus; priority: number } | null
+  report?: { id: string; status: ReportStatus; version: number } | null
   created_at?: string
 }
 

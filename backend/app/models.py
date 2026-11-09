@@ -103,6 +103,9 @@ class Image(Entity, Base):
     sha256 = Column(String(64), unique=True, nullable=False)
     class_label = Column(String(16), nullable=False, index=True)
     source = Column(String(16), default="BUSI", nullable=False)
+    exclude_reason = Column(String(64))
+    excluded_by = ref("app_user")
+    excluded_at = Column(DateTime(timezone=True))
 
 
 class Annotation(Entity, Base):
@@ -173,6 +176,8 @@ class AnnotationTask(Entity, Base):
     annotation_id = ref("annotation")
     status = Column(String(16), default="pending", nullable=False, index=True)
     priority = Column(Integer, default=3, nullable=False)
+    required_annotators = Column(Integer, default=1, nullable=False)
+    consistency = Column(JSON)
     claimed_at = Column(DateTime(timezone=True))
     finished_at = Column(DateTime(timezone=True))
     __table_args__ = (
@@ -184,6 +189,16 @@ class AnnotationTask(Entity, Base):
             sqlite_where=text("status != 'approved'"),
         ),
     )
+
+
+class AnnotationAssignment(Entity, Base):
+    __tablename__ = "annotation_assignment"
+    task_id = ref("annotation_task", nullable=False, index=True)
+    annotator_id = ref("app_user", nullable=False)
+    annotation_id = ref("annotation")
+    status = Column(String(16), default="in_progress", nullable=False)
+    submitted_at = Column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("task_id", "annotator_id"),)
 
 
 class Model(Entity, Base):
@@ -201,6 +216,10 @@ class ModelVersion(Entity, Base):
     weights_sha256 = Column(String(64), nullable=False)
     config = Column(JSON, nullable=False)
     metrics = Column(JSON)
+    regression = Column(JSON)
+    metrics_source = Column(String(16), default="registration", nullable=False)
+    evaluated_at = Column(DateTime(timezone=True))
+    evaluation_job_id = Column(String(36))
     status = Column(String(16), default="candidate", nullable=False)
     created_by = ref("app_user", nullable=False)
     activated_at = Column(DateTime(timezone=True))
@@ -231,6 +250,7 @@ class InferenceTask(Entity, Base):
     batch_id = ref("inference_batch", index=True)
     requested_by = ref("app_user", nullable=False)
     status = Column(String(16), default="queued", nullable=False)
+    attempt = Column(Integer, default=1, nullable=False)
     params = Column(JSON, nullable=False)
     cache_key = Column(String(64), nullable=False, index=True)
     error = Column(JSON)
