@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
   ArrowDown, Cpu, DataAnalysis, DataBoard, Document, DocumentChecked, EditPen, Files, Picture,
-  Search, SwitchButton, UploadFilled, User, View
+  Bell, Search, SwitchButton, UploadFilled, User, View
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { useNotificationStore } from '@/stores/notification'
 
 const auth = useAuthStore()
+const notice = useNotificationStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -43,6 +45,11 @@ async function onLogout() {
   await auth.logout()
   router.push('/login')
 }
+
+function goNotif() {
+  router.push('/notifications')
+}
+onMounted(() => { notice.fetchUnread() })
 
 const roleText: Record<string, string> = {
   admin: '管理员', data_engineer: '数据工程师', annotator: '标注员', screener: '筛查医生', reviewer: '审核医师'
@@ -79,7 +86,12 @@ const roleText: Record<string, string> = {
           <span class="head-title">{{ currentLabel }}</span>
         </div>
         <div class="head-right">
-          <div class="head-badge"><span class="status-dot" />系统在线</div>
+          <el-badge :value="notice.unread" :hidden="notice.unread === 0">
+          <el-button circle text @click="goNotif" aria-label="通知">
+            <el-icon :size="18"><Bell /></el-icon>
+          </el-button>
+        </el-badge>
+        <div class="head-badge"><span class="status-dot" />系统在线</div>
           <el-dropdown trigger="click">
             <span class="user">
               <el-avatar :size="30" class="avatar">{{ auth.user?.display_name?.charAt(0) || '?' }}</el-avatar>

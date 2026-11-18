@@ -214,7 +214,7 @@ export function reviewStudy(id: string, payload: {
   mask_rle?: RleMask
   is_empty?: boolean
   comment?: string
-  follow_up?: boolean
+  follow_up?: string | boolean
 }) {
   return http.post(`/studies/${id}/reviews`, payload)
 }
@@ -295,4 +295,35 @@ export function getAuditLogs(params: {
 // ---- 健康 ----
 export function healthz() {
   return http.get('/healthz')
+}
+
+// ---- 通知 ----
+export function getNotifications(params: { page?: number; page_size?: number; unread_only?: boolean } = {}) {
+  return http.get('/notifications', { params, silent: true })
+}
+export function getUnreadCount() {
+  return http.get('/notifications/unread-count', { silent: true })
+}
+export function markNotificationRead(id: string) {
+  return http.post(`/notifications/${id}/read`)
+}
+export function markAllNotificationsRead() {
+  return http.post('/notifications/read-all', null, { silent: true })
+}
+
+// ---- 回程路径 ----
+export function retryInferenceBatch(id: string) {
+  return http.post(`/inference-batches/${id}/retry`)
+}
+export function voidReport(id: string, payload: { reason: string }) {
+  return http.post(`/reports/${id}/void`, payload)
+}
+export function createAnnotationTasksBatch(payload: {
+  image_ids?: string[]
+  dataset_version_id?: string | null
+  class_labels?: string[]
+  priority?: number
+  required_annotators?: number
+}) {
+  return http.post('/annotation-tasks/batch', payload)
 }

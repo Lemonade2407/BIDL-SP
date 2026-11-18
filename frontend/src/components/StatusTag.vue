@@ -25,6 +25,8 @@ const MAP: Record<string, { type: 'success' | 'info' | 'warning' | 'danger' | 'p
   running: { type: 'warning', label: '运行中' },
   succeeded: { type: 'success', label: '成功' },
   partial: { type: 'warning', label: '部分成功' },
+  returned: { type: 'warning', label: '已退回' },
+  voided: { type: 'info', label: '已作废' },
   done: { type: 'success', label: '已完成' }
 }
 

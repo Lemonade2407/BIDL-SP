@@ -20,6 +20,12 @@ const form = reactive({
   class_labels: [] as ClassLabel[]
 })
 
+interface GapDetail { missing_approved_count: number; missing_approved_sample: { image_id: string; relative_path: string; class_label: string | null }[]; missing_mask_count: number }
+const gapVisible = ref(false)
+const gapVersionId = ref('')
+const gapData = ref<GapDetail | null>(null)
+const gapCreating = ref(false)
+
 const classOptions: { value: ClassLabel; label: string }[] = [
   { value: 'benign', label: '良性' },
   { value: 'malignant', label: '恶性' },
@@ -37,9 +43,36 @@ onMounted(async () => {
 
 async function freeze(v: DatasetVersion) {
   if (v.status === 'frozen') return
-  await api.freezeDatasetVersion(v.id)
-  ElMessage.success('版本已冻结')
-  v.status = 'frozen'
+  try {
+    await api.freezeDatasetVersion(v.id)
+    ElMessage.success('版本已冻结')
+    v.status = 'frozen'
+  } catch (error: any) {
+    const data = error?.response?.data
+    if (data?.code === 'DATASET_GAP') {
+      gapVersionId.value = v.id
+      gapData.value = data.details ?? null
+      gapVisible.value = true
+    } else {
+      ElMessage.error(data?.message || '冻结失败')
+    }
+  }
+}
+
+async function fillGap() {
+  if (!gapData.value) return
+  const imageIds = gapData.value.missing_approved_sample.map((s) => s.image_id)
+  gapCreating.value = true
+  try {
+    await api.createAnnotationTasks({ image_ids: imageIds, priority: 3, required_annotators: 1 })
+    ElMessage.success('补标任务已生成')
+    gapVisible.value = false
+    router.push('/annotation/tasks')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '创建补标任务失败')
+  } finally {
+    gapCreating.value = false
+  }
 }
 
 async function archive(v: DatasetVersion) {
@@ -129,6 +162,29 @@ async function createTasks() {
       </el-col>
     </el-row>
 
+    <el-dialog v-model="gapVisible" title="冻结失败：存在标注缺口" width="640px">
+      <el-alert type="warning" :closable="false" show-icon title="该版本存在缺少「已通过标注」的影像，需先补齐标注后再冻结。" />
+      <el-descriptions v-if="gapData" :column="2" border size="small" style="margin-top: 14px">
+        <el-descriptions-item label="缺少已通过标注">{{ gapData.missing_approved_count }} 张</el-descriptions-item>
+        <el-descriptions-item label="缺少掩膜">{{ gapData.missing_mask_count }} 张</el-descriptions-item>
+      </el-descriptions>
+      <el-table
+        v-if="gapData && gapData.missing_approved_sample.length"
+        :data="gapData.missing_approved_sample.slice(0, 20)"
+        border
+        size="small"
+        max-height="260"
+        style="margin-top: 14px"
+      >
+        <el-table-column prop="image_id" label="影像 ID" width="200" />
+        <el-table-column prop="relative_path" label="相对路径" show-overflow-tooltip />
+        <el-table-column prop="class_label" label="类别" width="100" />
+      </el-table>
+      <template #footer>
+        <el-button @click="gapVisible = false">稍后处理</el-button>
+        <el-button type="primary" :loading="gapCreating" @click="fillGap">一键生成补标任务</el-button>
+      </template>
+    </el-dialog>
     <el-dialog v-model="dialogVisible" title="生成标注任务" width="480px">
       <el-form label-width="96px">
         <el-form-item label="数据集版本">

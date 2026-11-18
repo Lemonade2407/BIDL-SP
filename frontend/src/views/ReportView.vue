@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Report, ReportContent } from '@/types'
 import * as api from '@/api'
 import ReportEditor from '@/components/ReportEditor.vue'
+import { useAuthStore } from '@/stores/auth'
 import StatusTag from '@/components/StatusTag.vue'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
+const isAdmin = computed(() => auth.hasRole('admin'))
 const report = ref<Report | null>(null)
 const pdfLoading = ref(false)
 
@@ -55,6 +58,13 @@ async function reject() {
   report.value!.status = 'rejected'
 }
 
+async function doVoid() {
+  const { value } = await ElMessageBox.prompt('作废已签发报告需填写原因（不可恢复）', '作废报告', { inputPlaceholder: '作废原因…', inputValidator: (v) => (v && v.trim() ? true : '原因必填') })
+  await api.voidReport(report.value!.id, { reason: value })
+  ElMessage.success('报告已作废')
+  report.value!.status = 'voided'
+}
+
 async function exportPdf(mode: 'download' | 'print') {
   const current = report.value
   if (!current) return
@@ -97,6 +107,7 @@ async function exportPdf(mode: 'download' | 'print') {
           <el-button v-if="report.status === 'draft'" type="primary" @click="submit">提交审核</el-button>
           <el-button v-if="report.status === 'pending_review'" type="success" @click="sign">签发</el-button>
           <el-button v-if="report.status === 'pending_review'" type="danger" @click="reject">驳回</el-button>
+          <el-button v-if="isAdmin && report.status === 'signed'" type="danger" plain @click="doVoid">作废</el-button>
         </div>
       </div>
       <el-divider />

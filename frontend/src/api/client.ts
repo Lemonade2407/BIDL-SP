@@ -2,6 +2,12 @@ import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axio
 import { ElMessage } from 'element-plus'
 import type { ApiError } from '@/types'
 
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    silent?: boolean
+  }
+}
+
 export const http: AxiosInstance = axios.create({
   baseURL: '/api/v1',
   timeout: 30000
@@ -19,6 +25,7 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 http.interceptors.response.use(
   (resp) => resp.data,
   (error) => {
+    const silent = (error.config as { silent?: boolean } | undefined)?.silent === true
     const status = error.response?.status
     const data = error.response?.data as ApiError | undefined
     const msg = data?.message || error.message || '网络错误'
@@ -28,12 +35,14 @@ http.interceptors.response.use(
       if (window.location.pathname !== '/login') {
         window.location.href = '/login'
       }
-    } else if (status === 403) {
-      ElMessage.error('无权限执行此操作（403）')
-    } else if (status === 409) {
-      ElMessage.warning(msg)
-    } else {
-      ElMessage.error(msg)
+    } else if (!silent) {
+      if (status === 403) {
+        ElMessage.error('无权限执行此操作（403）')
+      } else if (status === 409) {
+        ElMessage.warning(msg)
+      } else {
+        ElMessage.error(msg)
+      }
     }
     return Promise.reject(error)
   }

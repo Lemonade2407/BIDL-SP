@@ -123,6 +123,7 @@ onMounted(fetch)
             <el-option label="待处理" value="pending" />
             <el-option label="进行中" value="in_progress" />
             <el-option label="已完成" value="done" />
+            <el-option label="已退回" value="returned" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -146,11 +147,15 @@ onMounted(fetch)
         <el-table-column label="领取人" width="120">
           <template #default="{ row }">{{ row.assignee?.display_name || '—' }}</template>
         </el-table-column>
+        <el-table-column label="退回原因" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.return_reason || (row.status === 'returned' ? '—' : '') }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="260">
           <template #default="{ row }">
             <el-button v-if="canManage && row.status === 'pending'" size="small" type="primary" @click="claim(row)">领取</el-button>
             <el-button v-if="canManage && row.status === 'in_progress'" size="small" @click="open(row)">进入复核</el-button>
             <el-button v-if="row.status === 'done'" size="small" @click="open(row)">查看</el-button>
+            <el-button v-if="row.status === 'returned'" size="small" @click="open(row)">查看</el-button>
             <el-button
               v-if="row.status === 'in_progress' && (isMine(row) || isAdmin)"
               size="small"
