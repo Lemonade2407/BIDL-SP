@@ -214,7 +214,7 @@ export function reviewStudy(id: string, payload: {
   mask_rle?: RleMask
   is_empty?: boolean
   comment?: string
-  follow_up?: boolean
+  follow_up?: boolean | 're_infer' | 'manual' | 'transfer'
 }) {
   return http.post(`/studies/${id}/reviews`, payload)
 }

@@ -514,3 +514,7 @@ BUSI 约 2 GB、单权重约 421 MB。当前本地工作区为便于复现已包
 - 后端运行、数据/模型初始化、Compose 部署、故障处理与备份见本文件第 6.3–6.7 节
 - [真实 BUSI 导入与冻结证据](docs/evidence/busi-acceptance.json)
 - [后端测试与 Compose 证据](docs/evidence/backend-tests.xml)、[compose-ci.json](docs/evidence/compose-ci.json)
+- [2026-11-21 流程回程交付与 C 联调说明](docs/evidence/member-a-workflow-handoff.md)：通知、冻结补标、报告修订/作废、筛查退回、任务回收与质量统计。当前接口清单 85 项。
+- 本次升级含迁移 `0006_workflow_loops`。已有部署先备份数据库，正常执行 `alembic -c backend/alembic.ini upgrade head` 并更新 API/Worker/Beat；Compose init 会自动迁移，不需要清库或删除数据卷。
+- 人工任务超时配置：`ANNOTATION_SLA_HOURS=48`、`SCREENING_SLA_HOURS=24`、`TASK_RELEASE_GRACE_HOURS=24`。先预警，再从预警时间起计算宽限期；保留双人任务中已提交的内容。
+- WP-19 回程界面和 WP-20 页面 E2E 由 C 接入；本次新增后端接口与原有前端兼容调整不替代 C 的页面交付。

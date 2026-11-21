@@ -165,13 +165,13 @@ async function review(decision: string) {
     return
   }
   if (decision === 'reject') {
-    const { value } = await ElMessageBox.prompt('请输入驳回原因', '驳回检查', {
+      const { value } = await ElMessageBox.prompt('请输入驳回原因；本入口将退回人工重做', '驳回检查', {
       inputPlaceholder: '原因…'
     })
     submitting.value = true
     try {
-      await api.reviewStudy(study.value.id, { decision, comment: value })
-      ElMessage.success('已驳回，任务回到待处理')
+        await api.reviewStudy(study.value.id, { decision, comment: value, follow_up: 'manual' })
+        ElMessage.success('已退回，重新领取后请人工修改标注')
       router.push('/screening/worklist')
     } finally {
       submitting.value = false

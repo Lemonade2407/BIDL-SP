@@ -7,10 +7,11 @@ from . import schemas as s
 from .common import APIError, audit, get, page, reply, serialize, user_ref
 from .config import DISCLAIMER
 from .db import get_db, now, uid
+from .notifications import notify, recipients
 from .reports import pdf_bytes, render, validate_template
 from .routes_annotations import claim, save_annotation
 from .routes_data import image_json
-from .routes_models import inference_json
+from .routes_models import inference_json, new_inference, resolve_model
 from .security import current_user, require
 from .storage import storage
 
@@ -111,6 +112,7 @@ def study_detail(
     )
     report_ids = list(db.scalars(select(m.Report.id).where(m.Report.study_id == id)))
     task_ids = list(db.scalars(select(m.InferenceTask.id).where(m.InferenceTask.image_id.in_(ids))))
+    task_ids += list(db.scalars(select(m.ScreenTask.id).where(m.ScreenTask.study_id == id)))
     reviews = list(
         db.scalars(
             select(m.StudyReview).where(m.StudyReview.study_id == id).order_by(m.StudyReview.created_at)
@@ -128,9 +130,14 @@ def study_detail(
             "patient": serialize(get(db, m.Patient, obj.patient_id)),
             "images": [image_json(db, i) for i in images],
             "latest_inference": inference_json(db, inference) if inference else None,
-            "reviews": [serialize(r) for r in reviews],
+            "reviews": [{**serialize(r), "follow_up": r.return_action or r.follow_up} for r in reviews],
             "timeline": [
-                {"action": a.action, "actor": user_ref(db, a.actor_id), "at": serialize(a)["created_at"]}
+                {
+                    "action": a.action,
+                    "actor": user_ref(db, a.actor_id),
+                    "at": serialize(a)["created_at"],
+                    "detail": a.detail,
+                }
                 for a in timeline
             ],
         },
@@ -164,7 +171,7 @@ def screen_tasks(
         stmt = stmt.where(
             or_(
                 m.ScreenTask.status == "pending",
-                (m.ScreenTask.status == "in_progress") & (m.ScreenTask.assignee_id == user.id),
+                m.ScreenTask.status.in_(["in_progress", "returned"]) & (m.ScreenTask.assignee_id == user.id),
             )
         )
     if p.get("assignee") == "me":
@@ -194,7 +201,40 @@ def screen_tasks(
 def screen_claim(
     id: str, request: Request, db=Depends(get_db, scope="function"), user=Depends(require("screening:manage"))
 ):
-    obj = claim(db, m.ScreenTask, id, user)
+    obj = get(db, m.ScreenTask, id, lock=True)
+    if obj.status == "returned":
+        if obj.assignee_id != user.id and "admin" not in user.roles:
+            raise APIError(403, "退回任务只能由原领取人或管理员处理")
+        if obj.follow_up == "transfer" and "admin" not in user.roles:
+            raise APIError(409, "请由管理员改派任务")
+        if obj.follow_up == "re_infer":
+            retries = [get(db, m.InferenceTask, tid) for tid in (obj.retry_task_ids or [])]
+            if not retries or any(t.status == "failed" for t in retries):
+                model = resolve_model(db)
+                image_ids = (
+                    [t.image_id for t in retries if t.status == "failed"]
+                    if retries
+                    else list(db.scalars(select(m.Image.id).where(m.Image.study_id == obj.study_id)))
+                )
+                if not image_ids:
+                    raise APIError(409, "检查无影像，不能重跑推理")
+                retained = [t.id for t in retries if t.status != "failed"]
+                for image_id in image_ids:
+                    retry = new_inference(db, image_id, model, s.InferenceParams(), user, request)
+                    # A clinical redo must not reuse the rejected inference cache.
+                    from .common import fingerprint
+
+                    retry.cache_key = fingerprint([retry.cache_key, obj.id, obj.return_count, retry.id])
+                    retained.append(retry.id)
+                obj.retry_task_ids = retained
+                audit(db, user, "screen.redo", obj, request, {"study_id": obj.study_id, "task_ids": retained})
+                db.flush()
+                return reply(request, serialize(obj), 202)
+            if any(t.status != "succeeded" for t in retries):
+                raise APIError(409, "重跑推理尚未完成，请稍后重新领取")
+        obj.status, obj.assignee_id, obj.claimed_at, obj.overdue_at = "in_progress", user.id, now(), None
+    else:
+        obj = claim(db, m.ScreenTask, id, user)
     get(db, m.Study, obj.study_id).status = "in_progress"
     audit(db, user, "screen.claim", obj, request)
     return reply(request, serialize(obj))
@@ -225,14 +265,20 @@ def screen_reassign(
     obj = get(db, m.ScreenTask, id, lock=True)
     if obj.status == "done":
         raise APIError(409, "已完成的检查不能改派")
+    if obj.status == "returned" and obj.follow_up == "re_infer":
+        retries = [get(db, m.InferenceTask, tid) for tid in (obj.retry_task_ids or [])]
+        if not retries or any(t.status != "succeeded" for t in retries):
+            raise APIError(409, "请先通过领取操作完成重跑推理")
     target = get(db, m.User, body.assignee_id)
     if target.status != "active":
         raise APIError(422, "被指派人未启用")
     if not {"screener", "admin"} & set(target.roles):
         raise APIError(422, "被指派人没有筛查权限")
     obj.assignee_id, obj.status, obj.claimed_at = target.id, "in_progress", now()
+    obj.overdue_at = None
     get(db, m.Study, obj.study_id).status = "in_progress"
     audit(db, user, "screen.reassign", obj, request, {"assignee_id": target.id})
+    notify(db, [target.id], "screen.assigned", obj, "收到筛查任务", link=f"/screening/studies/{obj.study_id}")
     db.flush()
     return reply(request, {**serialize(obj), "assignee": user_ref(db, obj.assignee_id)})
 
@@ -247,8 +293,8 @@ def study_review(
 ):
     study = get(db, m.Study, id, lock=True)
     task = ensure_owner(db, id, user)
-    if task.status == "done":
-        raise APIError(409, "检查已复核完成")
+    if task.status != "in_progress":
+        raise APIError(409, "请先领取可复核的检查")
     images = list(db.scalars(select(m.Image).where(m.Image.study_id == id)))
     annotation, result, image = None, None, None
     if body.annotation_id:
@@ -256,6 +302,8 @@ def study_review(
         image = get(db, m.Image, annotation.image_id)
         if image.study_id != id:
             raise APIError(422, "标注不属于该检查")
+    if task.follow_up == "manual" and body.decision == "accept" and annotation is None:
+        raise APIError(422, "人工重做需提供标注，或使用 modify 提交掩膜")
     if body.image_id:
         image = get(db, m.Image, body.image_id)
         if image.study_id != id:
@@ -296,16 +344,50 @@ def study_review(
         reviewer_id=user.id,
         decision=body.decision,
         comment=body.comment,
-        follow_up=body.follow_up,
+        follow_up=body.follow_up if isinstance(body.follow_up, bool) else False,
+        return_action=body.follow_up if isinstance(body.follow_up, str) else None,
     )
     db.add(obj)
     db.flush()
     if body.decision != "reject":
         task.status, task.finished_at = "done", now()
         study.status = "reviewed"
+    else:
+        task.status, study.status = "returned", "returned"
+        task.returned_by, task.returned_at, task.return_reason = user.id, now(), body.comment
+        task.follow_up, task.retry_task_ids = body.follow_up, []
+        task.return_count += 1
+        task.finished_at, task.overdue_at = None, None
+        audit(
+            db,
+            user,
+            "screen.return",
+            study,
+            request,
+            {"task_id": task.id, "follow_up": body.follow_up, "reason": body.comment},
+        )
+        owners = [task.assignee_id]
+        if body.follow_up == "transfer":
+            owners += recipients(db, "user:manage")
+        notify(
+            db,
+            owners,
+            "screen.returned",
+            task,
+            "筛查任务已退回",
+            body.comment,
+            f"/screening/studies/{id}",
+            version=task.return_count,
+        )
     audit(db, user, "study.review", obj, request, {"study_id": study.id, "decision": body.decision})
     return reply(
-        request, {**serialize(obj), "reviewed_by": user_ref(db, user.id), "reviewed_at": obj.created_at}
+        request,
+        {
+            **serialize(obj),
+            "follow_up": obj.return_action or obj.follow_up,
+            "reviewed_by": user_ref(db, user.id),
+            "reviewed_at": obj.created_at,
+        },
     )
 
 
@@ -408,6 +490,13 @@ def report_create(
     )
     if latest and latest.status in ("pending_review", "signed"):
         raise APIError(409, "待审或已签发报告不能继续改写")
+    if (
+        latest
+        and latest.status in ("rejected", "voided")
+        and latest.author_id != user.id
+        and "admin" not in user.roles
+    ):
+        raise APIError(403, "修订报告须由原作者或管理员处理")
     template = get(db, m.ReportTemplate, body.template_id)
     if not template.active:
         raise APIError(409, "模板已停用")
@@ -457,6 +546,7 @@ def report_create(
         rendered_html=render(template.body, {**snapshot, **content}),
         version=latest.version + 1 if latest else 1,
         author_id=user.id,
+        previous_report_id=latest.id if latest else None,
     )
     db.add(obj)
     db.flush()
@@ -499,6 +589,14 @@ def report_submit(
     obj.status = "pending_review"
     audit(db, user, "report.submit", obj, request)
     db.flush()
+    notify(
+        db,
+        recipients(db, "report:sign", obj.author_id),
+        "report.pending_sign",
+        obj,
+        "报告待签发",
+        link=f"/reports/{obj.id}",
+    )
     return reply(request, report_json(db, obj))
 
 
@@ -513,8 +611,8 @@ def report_sign(
     obj = get(db, m.Report, id, lock=True)
     if obj.status != "pending_review":
         raise APIError(409, "报告不在待签发状态", "REPORT_NOT_SIGNABLE")
-    if obj.author_id == user.id and ("admin" not in user.roles or not (body.comment or "").strip()):
-        raise APIError(409, "起草人与签发人必须分离；管理员代签须说明原因", "REPORT_NOT_SIGNABLE")
+    if obj.author_id == user.id:
+        raise APIError(409, "起草人与签发人必须分离", "REPORT_NOT_SIGNABLE")
     if body.decision == "reject" and not (body.comment or "").strip():
         raise APIError(422, "驳回必须填写意见")
     if obj.inference_result_id:
@@ -539,7 +637,14 @@ def report_sign(
         )
         study.status = "reported"
     else:
-        obj.status = "draft"
+        obj.status, obj.rejected_at = "rejected", now()
+        obj.pdf_key = storage.put(
+            "bidlsp-report",
+            f"reports/{obj.id}/rejected-v{obj.version}.pdf",
+            pdf_bytes(obj, author_name, user.display_name),
+            "application/pdf",
+        )
+        notify(db, [obj.author_id], "report.rejected", obj, "报告被驳回", body.comment, f"/reports/{obj.id}")
     audit(
         db,
         user,
@@ -548,6 +653,63 @@ def report_sign(
         request,
         {"comment": body.comment, "admin_override": obj.author_id == user.id},
     )
+    db.flush()
+    return reply(request, report_json(db, obj))
+
+
+@router.post("/reports/{id}/revisions", status_code=201)
+def report_revision(
+    id: str,
+    body: s.ReportRevision,
+    request: Request,
+    db=Depends(get_db, scope="function"),
+    user=Depends(require("report:draft")),
+):
+    original = get(db, m.Report, id)
+    get(db, m.Study, original.study_id, lock=True)
+    original = get(db, m.Report, id, lock=True)
+    if original.status not in ("rejected", "voided"):
+        raise APIError(409, "仅被驳回或已作废的报告可以新建修订版")
+    if original.author_id != user.id and "admin" not in user.roles:
+        raise APIError(403, "仅原作者或管理员可创建修订版")
+    newest = db.scalar(select(func.max(m.Report.version)).where(m.Report.study_id == original.study_id))
+    if newest != original.version:
+        raise APIError(409, "已有更新版本，请打开最新报告")
+    content = body.content.model_dump() if body.content else dict(original.content)
+    obj = m.Report(
+        study_id=original.study_id,
+        inference_result_id=original.inference_result_id,
+        template_id=original.template_id,
+        content=content,
+        snapshot=dict(original.snapshot),
+        rendered_html=render(original.snapshot["template_body"], {**original.snapshot, **content}),
+        version=original.version + 1,
+        author_id=user.id,
+        previous_report_id=original.id,
+    )
+    db.add(obj)
+    db.flush()
+    audit(db, user, "report.revise", obj, request, {"previous_report_id": original.id})
+    return reply(request, report_json(db, obj), 201)
+
+
+@router.post("/reports/{id}/void")
+def report_void(
+    id: str,
+    body: s.ReportVoid,
+    request: Request,
+    db=Depends(get_db, scope="function"),
+    user=Depends(require("user:manage")),
+):
+    original = get(db, m.Report, id)
+    study = get(db, m.Study, original.study_id, lock=True)
+    obj = get(db, m.Report, id, lock=True)
+    if obj.status != "signed":
+        raise APIError(409, "只能作废已签发报告")
+    obj.status, obj.voided_at, obj.voided_by, obj.void_reason = "voided", now(), user.id, body.reason
+    study.status = "reopened"
+    audit(db, user, "report.void", obj, request, {"reason": body.reason, "version": obj.version})
+    notify(db, [obj.author_id], "report.voided", obj, "已签发报告被作废", body.reason, f"/reports/{obj.id}")
     db.flush()
     return reply(request, report_json(db, obj))
 

@@ -22,16 +22,16 @@ def post(client, path, headers, payload=None, status=200):
     return response.json()["data"] if response.content else None
 
 
-def test_openapi_matches_all_76_contract_endpoints():
+def test_openapi_matches_contract_endpoints():
     contract = (ROOT / "接口规范.md").read_text(encoding="utf-8")
     expected = re.findall(r"\| \d{3} \| (GET|POST|PATCH) \| `([^`]+)`", contract)
     actual = app.openapi()["paths"]
-    assert len(expected) == 76
+    assert len(expected) == 85
     for method, path in expected:
         assert method.lower() in actual["/api/v1" + path], path
-    assert (
-        len([(p, v) for p, methods in actual.items() for v in methods if v in {"get", "post", "patch"}]) == 76
-    )
+    assert len(
+        [(p, v) for p, methods in actual.items() for v in methods if v in {"get", "post", "patch"}]
+    ) == len(expected)
 
 
 def test_auth_rbac_logout_password_and_last_admin(client, headers):

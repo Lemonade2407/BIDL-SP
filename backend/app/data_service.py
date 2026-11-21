@@ -249,9 +249,7 @@ def import_image(db, archive, name, mask_names, job):
     return image, matches, warnings
 
 
-def freeze(db, version, user, request):
-    if version.status != "draft":
-        raise APIError(409, "只有草稿版本可冻结")
+def version_images(db, version):
     stmt = select(m.Image).where(m.Image.dataset_id == version.dataset_id)
     filters = version.filter
     if filters.get("class_labels"):
@@ -271,10 +269,41 @@ def freeze(db, version, user, request):
     }
     if filters.get("only_approved"):
         images = [i for i in images if i.id in annotations]
+    return images, annotations
+
+
+def dataset_gap(db, version):
+    images, annotations = version_images(db, version)
+    missing = [i for i in images if i.id not in annotations]
+    masks = [
+        i
+        for i in images
+        if i.id in annotations and not storage.exists("bidlsp-curated", annotations[i.id].mask_key)
+    ]
+
+    def sample(rows):
+        return [
+            {"image_id": i.id, "relative_path": i.relative_path, "class_label": i.class_label}
+            for i in rows[:100]
+        ]
+
+    return {
+        "missing_approved_count": len(missing),
+        "missing_approved_sample": sample(missing),
+        "missing_mask_count": len(masks),
+        "missing_mask_sample": sample(masks),
+        "sample_limit": 100,
+    }
+
+
+def freeze(db, version, user, request):
+    if version.status != "draft":
+        raise APIError(409, "只有草稿版本可冻结")
+    images, annotations = version_images(db, version)
     if not images:
         raise APIError(422, "没有可冻结影像")
     if any(i.id not in annotations for i in images):
-        raise APIError(409, "影像缺少 approved 标注")
+        raise APIError(422, "影像缺少 approved 标注", "DATASET_GAP", dataset_gap(db, version))
     frozen = json.loads((ROOT / "transunet/data/splits/busi_seed0.json").read_text())
     reference = {name: split for split in ("train", "val", "test") for name in frozen[split]}
     duplicate_paths = set()

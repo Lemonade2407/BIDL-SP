@@ -147,9 +147,14 @@ def update_user(
         raise APIError(409, "不能禁用或移除最后一个管理员")
     if "password" in changes:
         obj.password_hash = hash_password(changes.pop("password"))
+    released = []
+    if changes.get("status") == "disabled":
+        from .task_lifecycle import release_user_tasks
+
+        released = release_user_tasks(db, obj.id, user, request)
     for key, value in changes.items():
         setattr(obj, key, value)
     obj.token_version += 1
-    audit(db, user, "user.update", obj, request, {"fields": list(changes)})
+    audit(db, user, "user.update", obj, request, {"fields": list(changes), "released_task_ids": released})
     db.flush()
     return reply(request, serialize(obj))
