@@ -11,6 +11,9 @@ const MAP: Record<string, { type: 'success' | 'info' | 'warning' | 'danger' | 'p
   submitted: { type: 'warning', label: '已提交' },
   approved: { type: 'success', label: '已通过' },
   rejected: { type: 'danger', label: '已驳回' },
+  returned: { type: 'warning', label: '已退回' },
+  voided: { type: 'danger', label: '已作废' },
+  reopened: { type: 'warning', label: '待更正' },
   draft: { type: 'info', label: '草稿' },
   pending_review: { type: 'warning', label: '待审核' },
   signed: { type: 'success', label: '已签发' },
@@ -25,8 +28,6 @@ const MAP: Record<string, { type: 'success' | 'info' | 'warning' | 'danger' | 'p
   running: { type: 'warning', label: '运行中' },
   succeeded: { type: 'success', label: '成功' },
   partial: { type: 'warning', label: '部分成功' },
-  returned: { type: 'warning', label: '已退回' },
-  voided: { type: 'info', label: '已作废' },
   done: { type: 'success', label: '已完成' }
 }
 

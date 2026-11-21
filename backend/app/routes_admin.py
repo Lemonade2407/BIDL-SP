@@ -144,6 +144,47 @@ def screening(request: Request, db=Depends(get_db, scope="function"), user=Depen
     return reply(request, screening_stats(db, request.query_params))
 
 
+@router.get("/stats/quality")
+def quality(request: Request, db=Depends(get_db, scope="function"), user=Depends(require("stats:read"))):
+    reviews = list(db.scalars(select(m.AnnotationReview)))
+    reports = list(db.scalars(select(m.Report).where(m.Report.status.in_(["signed", "rejected", "voided"]))))
+    preannotation_reviews = list(
+        db.scalars(
+            select(m.AnnotationReview)
+            .join(m.Annotation, m.AnnotationReview.annotation_id == m.Annotation.id)
+            .where(m.Annotation.source == "preannot")
+        )
+    )
+    tasks = list(db.scalars(select(m.AnnotationTask)))
+    screens = list(db.scalars(select(m.ScreenTask)))
+    dual = [t for t in tasks if t.required_annotators == 2 and t.consistency]
+
+    def fraction(numerator, denominator):
+        return {
+            "numerator": numerator,
+            "denominator": denominator,
+            "rate": numerator / denominator if denominator else 0,
+        }
+
+    return reply(
+        request,
+        {
+            "annotation_rejection": fraction(sum(r.decision == "reject" for r in reviews), len(reviews)),
+            "report_rejection": fraction(sum(r.status == "rejected" for r in reports), len(reports)),
+            "preannotation_adoption": fraction(
+                sum(r.decision == "approve" for r in preannotation_reviews), len(preannotation_reviews)
+            ),
+            "arbitration": fraction(sum(not t.consistency.get("auto", False) for t in dual), len(dual)),
+            "overdue_tasks": sum(
+                t.status == "in_progress" and t.overdue_at is not None for t in tasks + screens
+            ),
+            "screen_returns": sum(t.return_count for t in screens),
+            "average_screen_returns": sum(t.return_count for t in screens) / len(screens) if screens else 0,
+            "definition": "全历史；标注驳回按审核事件；报告按已审核版本；预标注采纳按 preannot 的审核事件；仲裁按已有一致性结果的双人任务；退回均值以全部筛查任务为分母；逾期为已通知尚未释放的进行中任务",
+        },
+    )
+
+
 @router.get("/audit-logs")
 def audit_logs(request: Request, db=Depends(get_db, scope="function"), user=Depends(require("audit:read"))):
     stmt = select(m.AuditLog)

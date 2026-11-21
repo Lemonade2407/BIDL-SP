@@ -39,23 +39,29 @@ async function save() {
 }
 
 async function submit() {
-  await api.submitReport(report.value!.id)
+  const resp = await api.submitReport(report.value!.id) as { data: Report }
   ElMessage.success('已提交审核')
-  report.value!.status = 'pending_review'
+  report.value = resp.data
 }
 
 async function sign() {
   await ElMessageBox.confirm('确认签发该报告？', '签发确认', { type: 'warning' })
-  await api.signReport(report.value!.id, { decision: 'sign' })
+  const resp = await api.signReport(report.value!.id, { decision: 'sign' }) as { data: Report }
   ElMessage.success('报告已签发')
-  report.value!.status = 'signed'
+  report.value = resp.data
 }
 
 async function reject() {
   const { value } = await ElMessageBox.prompt('请输入驳回原因', '驳回报告', { inputPlaceholder: '原因…' })
-  await api.signReport(report.value!.id, { decision: 'reject', comment: value })
+  const resp = await api.signReport(report.value!.id, { decision: 'reject', comment: value }) as { data: Report }
   ElMessage.success('已驳回')
-  report.value!.status = 'rejected'
+  report.value = resp.data
+}
+
+async function revise() {
+  const resp = await api.createReportRevision(report.value!.id) as { data: Report }
+  ElMessage.success('已创建修订版')
+  router.replace(`/reports/${resp.data.id}`)
 }
 
 async function doVoid() {
@@ -108,10 +114,11 @@ async function exportPdf(mode: 'download' | 'print') {
           <el-button v-if="report.status === 'pending_review'" type="success" @click="sign">签发</el-button>
           <el-button v-if="report.status === 'pending_review'" type="danger" @click="reject">驳回</el-button>
           <el-button v-if="isAdmin && report.status === 'signed'" type="danger" plain @click="doVoid">作废</el-button>
+          <el-button v-if="['rejected', 'voided'].includes(report.status)" type="primary" @click="revise">新建修订版</el-button>
         </div>
       </div>
       <el-divider />
-      <ReportEditor :content="report.content" :readonly="report.status === 'signed'" @update:content="onContent" />
+      <ReportEditor :content="report.content" :readonly="report.status !== 'draft'" @update:content="onContent" />
       <div class="disclaimer" style="margin-top: 12px">
         本报告仅供科研/教学使用，不作为临床诊断依据。签发人：{{ report.reviewer?.display_name || '—' }}
       </div>

@@ -34,6 +34,20 @@ class User(Entity, Base):
     last_login_at = Column(DateTime(timezone=True))
 
 
+class Notification(Entity, Base):
+    __tablename__ = "notification"
+    user_id = ref("app_user", nullable=False, index=True)
+    type = Column(String(64), nullable=False)
+    title = Column(String(128), nullable=False)
+    body = Column(Text, nullable=False)
+    object_type = Column(String(32), nullable=False)
+    object_id = Column(String(36), nullable=False)
+    link = Column(String(512), nullable=False)
+    read_at = Column(DateTime(timezone=True))
+    dedupe_key = Column(String(64), nullable=False)
+    __table_args__ = (UniqueConstraint("user_id", "dedupe_key"),)
+
+
 class RevokedToken(Entity, Base):
     __tablename__ = "revoked_token"
     jti = Column(String(36), unique=True, nullable=False)
@@ -180,6 +194,7 @@ class AnnotationTask(Entity, Base):
     consistency = Column(JSON)
     claimed_at = Column(DateTime(timezone=True))
     finished_at = Column(DateTime(timezone=True))
+    overdue_at = Column(DateTime(timezone=True))
     __table_args__ = (
         Index(
             "uq_open_annotation_task",
@@ -292,6 +307,13 @@ class ScreenTask(Entity, Base):
     priority = Column(Integer, default=3, nullable=False)
     claimed_at = Column(DateTime(timezone=True))
     finished_at = Column(DateTime(timezone=True))
+    overdue_at = Column(DateTime(timezone=True))
+    returned_by = ref("app_user")
+    returned_at = Column(DateTime(timezone=True))
+    return_reason = Column(String(512))
+    follow_up = Column(String(16))
+    return_count = Column(Integer, default=0, nullable=False)
+    retry_task_ids = Column(JSON)
 
 
 class StudyReview(Entity, Base):
@@ -304,6 +326,7 @@ class StudyReview(Entity, Base):
     decision = Column(String(16), nullable=False)
     comment = Column(String(512))
     follow_up = Column(Boolean, default=False, nullable=False)
+    return_action = Column(String(16))
 
 
 class ReportTemplate(Entity, Base):
@@ -329,6 +352,11 @@ class Report(Entity, Base):
     review_comment = Column(String(512))
     signed_at = Column(DateTime(timezone=True))
     pdf_key = Column(String(512))
+    previous_report_id = ref("report")
+    rejected_at = Column(DateTime(timezone=True))
+    voided_at = Column(DateTime(timezone=True))
+    voided_by = ref("app_user")
+    void_reason = Column(String(512))
     __table_args__ = (UniqueConstraint("study_id", "version"),)
 
 

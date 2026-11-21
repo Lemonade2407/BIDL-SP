@@ -11,7 +11,15 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.exceptions import HTTPException
 
-from . import routes_admin, routes_annotations, routes_auth, routes_data, routes_models, routes_screening
+from . import (
+    routes_admin,
+    routes_annotations,
+    routes_auth,
+    routes_data,
+    routes_models,
+    routes_notifications,
+    routes_screening,
+)
 from .common import APIError
 from .config import DISCLAIMER, settings
 from .db import engine, uid
@@ -135,7 +143,15 @@ async def db_error(request, exc):
 
 
 router = APIRouter(prefix="/api/v1")
-for module in (routes_auth, routes_data, routes_annotations, routes_models, routes_screening, routes_admin):
+for module in (
+    routes_auth,
+    routes_data,
+    routes_annotations,
+    routes_models,
+    routes_screening,
+    routes_admin,
+    routes_notifications,
+):
     router.include_router(module.router)
 
 

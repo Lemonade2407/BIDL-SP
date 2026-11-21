@@ -16,7 +16,9 @@ from . import models as m
 from .common import audit, get
 from .config import settings
 from .db import SessionLocal, now
+from .notifications import notify_failure
 from .storage import storage
+from .task_lifecycle import recover_overdue
 
 logger = logging.getLogger(__name__)
 app = Celery("bidlsp-platform", broker=settings.redis_url, backend=settings.redis_url)
@@ -154,6 +156,7 @@ def execute_inference(task_id):
                 "message": "推理未完成；请检查权重、影像与 Worker 日志",
             }
             audit(db, None, "inference.finish", task, detail={"status": "failed", "code": task.error["code"]})
+            notify_failure(db, task)
             db.commit()
             logger.exception("Inference %s failed", task_id)
 
@@ -310,6 +313,8 @@ def execute_evaluation(job_id):
             logger.exception("Evaluation %s failed", job_id)
         job.finished_at = now()
         audit(db, None, "evaluation.finish", job, detail={"status": job.status})
+        if job.status == "failed":
+            notify_failure(db, job)
         db.commit()
 
 
@@ -372,6 +377,8 @@ def timeouts():
                     "message": "Worker 超时或退出，请重新提交",
                 }
                 audit(db, None, "task.timeout", obj)
+                notify_failure(db, obj)
+        recover_overdue(db)
         db.commit()
 
 

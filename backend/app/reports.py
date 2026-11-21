@@ -123,6 +123,8 @@ def pdf_bytes(report, author_name, reviewer_name):
             ),
         ]
     )
+    if report.status == "rejected":
+        story.append(Paragraph(escape(f"审核结果：已驳回；意见：{report.review_comment or ''}"), small))
 
     def footer(canvas, doc):
         canvas.saveState()

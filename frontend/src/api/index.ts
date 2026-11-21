@@ -214,7 +214,7 @@ export function reviewStudy(id: string, payload: {
   mask_rle?: RleMask
   is_empty?: boolean
   comment?: string
-  follow_up?: string | boolean
+  follow_up?: boolean | 're_infer' | 'manual' | 'transfer'
 }) {
   return http.post(`/studies/${id}/reviews`, payload)
 }
@@ -301,6 +301,9 @@ export function healthz() {
 export function getNotifications(params: { page?: number; page_size?: number; unread_only?: boolean } = {}) {
   return http.get('/notifications', { params, silent: true })
 }
+export function getTodos() {
+  return http.get('/todos', { silent: true })
+}
 export function getUnreadCount() {
   return http.get('/notifications/unread-count', { silent: true })
 }
@@ -314,6 +317,9 @@ export function markAllNotificationsRead() {
 // ---- 回程路径 ----
 export function retryInferenceBatch(id: string) {
   return http.post(`/inference-batches/${id}/retry`)
+}
+export function createReportRevision(id: string) {
+  return http.post(`/reports/${id}/revisions`)
 }
 export function voidReport(id: string, payload: { reason: string }) {
   return http.post(`/reports/${id}/void`, payload)

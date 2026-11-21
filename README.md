@@ -27,11 +27,11 @@ BIDL-SP 试图解决乳腺影像落地中的四个问题：
 |---|---|---|
 | 需求分析 | 已完成 | [需求分析.md](需求分析.md) |
 | 详细设计 | 已完成 | [详细设计.md](详细设计.md) |
-| 接口规范 | 已完成 | [接口规范.md](接口规范.md)，64 个接口 |
+| 接口规范 | 已完成 | [接口规范.md](接口规范.md)，85 个接口 |
 | 分工文档 | 已完成 | [分工.md](分工.md) |
 | 算法复现包 | 已完成 | 代码、冻结划分、指标与核验脚本已入库；BUSI 与 3 个权重因体积不入 Git，使用说明见 [transunet/README.md](transunet/README.md) |
 | 算法服务（成员 B） | 已完成 | `algo/`：模型注册、推理适配、离线评估、Celery Worker、CLI；`python -m algo.cli --help` |
-| 平台后端（成员 A） | 已实现，待交叉验收 | `backend/`：64 个 API、数据库迁移、数据湖、标注/筛查/报告、JWT/RBAC、审计、Worker 对接 |
+| 平台后端（成员 A） | 已实现，待交叉验收 | `backend/`：85 个 API、数据库迁移、数据湖、标注/筛查/报告、JWT/RBAC、审计、Worker 对接 |
 | 平台前端（成员 C） | UI 已完成，联调中 | `frontend/`：14 个页面与核心组件；仅调用真实 `/api/v1` 接口，不再内置 Mock 数据 |
 | 部署编排 | 已提供 | `deploy/`：Compose、初始化、健康检查、Nginx；见第 6.3 节 |
 
@@ -404,7 +404,7 @@ MinIO 用 `mc mirror` 备份各私有桶，凭据在运维端交互配置。恢�
 |---|---|
 | [需求分析.md](需求分析.md) | 背景、角色、场景、用例、约 50 条功能需求、14 条非功能需求、验收标准 |
 | [详细设计.md](详细设计.md) | 架构、模块、24 张表、接口摘要、算法、前端、安全、部署、测试、追踪矩阵 |
-| [接口规范.md](接口规范.md) | `/api/v1` 通用约定、64 个接口、对象模型、错误码、请求示例 |
+| [接口规范.md](接口规范.md) | `/api/v1` 通用约定、85 个接口、对象模型、错误码、请求示例 |
 | [分工.md](分工.md) | 3 人角色、12 个工作包、模块归属、里程碑、协作规范、交叉备份 |
 | [docs/待解决问题.md](docs/待解决问题.md) | 当前问题、优先级、验收标准与处理记录 |
 | [docs/evidence/](docs/evidence) | 后端、BUSI、Compose、真实 E2E 证据 |
@@ -514,3 +514,7 @@ BUSI 约 2 GB、单权重约 421 MB。当前本地工作区为便于复现已包
 - 后端运行、数据/模型初始化、Compose 部署、故障处理与备份见本文件第 6.3–6.7 节
 - [真实 BUSI 导入与冻结证据](docs/evidence/busi-acceptance.json)
 - [后端测试与 Compose 证据](docs/evidence/backend-tests.xml)、[compose-ci.json](docs/evidence/compose-ci.json)
+- [2026-11-21 流程回程交付与 C 联调说明](docs/evidence/member-a-workflow-handoff.md)：通知、冻结补标、报告修订/作废、筛查退回、任务回收与质量统计。当前接口清单 85 项。
+- 本次升级含迁移 `0006_workflow_loops`。已有部署先备份数据库，正常执行 `alembic -c backend/alembic.ini upgrade head` 并更新 API/Worker/Beat；Compose init 会自动迁移，不需要清库或删除数据卷。
+- 人工任务超时配置：`ANNOTATION_SLA_HOURS=48`、`SCREENING_SLA_HOURS=24`、`TASK_RELEASE_GRACE_HOURS=24`。先预警，再从预警时间起计算宽限期；保留双人任务中已提交的内容。
+- WP-19 回程界面和 WP-20 页面 E2E 由 C 接入；本次新增后端接口与原有前端兼容调整不替代 C 的页面交付。

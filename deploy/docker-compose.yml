@@ -16,6 +16,9 @@ x-platform: &platform
   DEVICE: cpu
   WORK_DIR: /opt/bidl/.runtime/work
   CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:5173"]}
+  ANNOTATION_SLA_HOURS: ${ANNOTATION_SLA_HOURS:-48}
+  SCREENING_SLA_HOURS: ${SCREENING_SLA_HOURS:-24}
+  TASK_RELEASE_GRACE_HOURS: ${TASK_RELEASE_GRACE_HOURS:-24}
 
 services:
   db:

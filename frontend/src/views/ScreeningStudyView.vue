@@ -234,7 +234,7 @@ async function submitReject() {
     await api.reviewStudy(study.value.id, {
       decision: 'reject',
       comment: rejectReason.value,
-      follow_up: rejectFollowUp.value ? true : false
+      follow_up: rejectFollowUp.value || undefined
     })
     rejectVisible.value = false
     ElMessage.success('已驳回，任务已退回待处理')

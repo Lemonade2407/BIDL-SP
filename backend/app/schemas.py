@@ -93,6 +93,22 @@ class ImageExclude(Input):
     exclude_reason: str | None = Field(default=None, max_length=64)
 
 
+class AnnotationBatch(Input):
+    image_ids: list[ID] | None = Field(default=None, min_length=1, max_length=500)
+    dataset_id: ID | None = None
+    dataset_version_id: ID | None = None
+    class_labels: list[Label] | None = None
+    only_missing_approved: bool = True
+    priority: int = Field(default=3, ge=1, le=5)
+    required_annotators: int = Field(default=1, ge=1, le=2)
+
+    @model_validator(mode="after")
+    def source(self):
+        if sum(bool(v) for v in (self.image_ids, self.dataset_id, self.dataset_version_id)) != 1:
+            raise ValueError("choose image_ids, dataset_id or dataset_version_id")
+        return self
+
+
 class RLE(Input):
     size: list[Annotated[int, Field(strict=True, gt=0, le=10000)]] = Field(min_length=2, max_length=2)
     counts: list[Annotated[int, Field(strict=True, ge=0)]] = Field(min_length=1, max_length=1000000)
@@ -212,7 +228,15 @@ class StudyDecision(Input):
     mask_rle: RLE | None = None
     is_empty: bool = False
     comment: Note | None = None
-    follow_up: bool = False
+    follow_up: Literal["re_infer", "manual", "transfer"] | bool = False
+
+    @model_validator(mode="after")
+    def return_path(self):
+        if self.decision == "reject" and not isinstance(self.follow_up, str):
+            raise ValueError("reject requires follow_up: re_infer/manual/transfer")
+        if self.decision != "reject" and isinstance(self.follow_up, str):
+            raise ValueError("return actions are only valid for reject")
+        return self
 
 
 class TemplateCreate(Input):
@@ -249,3 +273,18 @@ class ReportCreate(Input):
 class ReportDecision(Input):
     decision: Literal["sign", "reject"]
     comment: Note | None = None
+
+
+class ReportVoid(Input):
+    reason: str = Field(min_length=1, max_length=512)
+
+    @field_validator("reason")
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip():
+            raise ValueError("reason must not be blank")
+        return value.strip()
+
+
+class ReportRevision(Input):
+    content: ReportContent | None = None
