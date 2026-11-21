@@ -5,6 +5,7 @@ dispatcher and worker must process the outbox; this script never executes jobs
 eagerly or calls dispatch directly.
 """
 
+import argparse
 import io
 import time
 import zipfile
@@ -16,7 +17,28 @@ from PIL import Image
 DEMO_ADMIN = {"username": "admin", "password": "DemoPassword!123"}
 
 
+def invalid_download_url(signed_url, storage_backend):
+    """Remove an S3 signature or corrupt the signature of a local JWT URL."""
+    parts = urlsplit(signed_url)
+    if storage_backend == "minio":
+        if "X-Amz-Signature=" not in parts.query:
+            raise ValueError("Expected a MinIO presigned URL")
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    if storage_backend != "local" or not parts.path.startswith("/api/v1/files/"):
+        raise ValueError("Expected a local signed download URL")
+    prefix, token = parts.path.rsplit("/", 1)
+    payload, signature = token.rsplit(".", 1)
+    # Alter the first signature character; removing a query leaves local JWTs intact.
+    if not signature:
+        raise ValueError("Missing local download signature")
+    invalid_signature = ("A" if signature[0] != "A" else "B") + signature[1:]
+    return urlunsplit((parts.scheme, parts.netloc, f"{prefix}/{payload}.{invalid_signature}", "", ""))
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--storage-backend", choices=("local", "minio"))
+    expected_backend = parser.parse_args().storage_backend
     with httpx.Client(base_url="http://localhost:8080/api/v1", timeout=20) as api:
         response = api.post("/auth/login", json=DEMO_ADMIN)
         response.raise_for_status()
@@ -52,15 +74,17 @@ def main():
         images = response.json()["data"]
         assert len(images) == 1, images
         signed_url = images[0]["thumbnail_url"]
-        # Use a separate unauthenticated client: S3 access depends on the signature.
+        backend = "local" if urlsplit(signed_url).path.startswith("/api/v1/files/") else "minio"
+        if expected_backend and backend != expected_backend:
+            raise AssertionError(f"Expected {expected_backend} storage, got {backend}")
+        # Use a separate unauthenticated client: access depends on the URL signature.
         with httpx.Client(timeout=20) as objects:
             response = objects.get(signed_url)
             response.raise_for_status()
             Image.open(io.BytesIO(response.content)).verify()
-            parts = urlsplit(signed_url)
-            unsigned_url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
-            assert objects.get(unsigned_url).status_code == 403
-        print("PASS: API -> PostgreSQL outbox -> Beat/dispatcher -> Redis -> Worker -> private MinIO")
+            denied = objects.get(invalid_download_url(signed_url, backend))
+            assert denied.status_code == 403, f"Expected invalid signature HTTP 403, got {denied.status_code}"
+        print(f"PASS: API -> PostgreSQL outbox -> Beat/dispatcher -> Redis -> Worker -> private {backend}")
 
 
 if __name__ == "__main__":
