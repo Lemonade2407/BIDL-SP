@@ -113,9 +113,10 @@ onMounted(load)
           <div v-if="screening">
             <div class="def muted">{{ screening.definition }}</div>
             <p>复核结论：接受 {{ screening.by_decision.accept ?? 0 }} / 修改 {{ screening.by_decision.modify ?? 0 }} / 驳回 {{ screening.by_decision.reject ?? 0 }}</p>
-            <p>任务状态：待处理 {{ screening.by_status.pending ?? 0 }} / 进行中 {{ screening.by_status.in_progress ?? 0 }} / 已完成 {{ screening.by_status.done ?? 0 }}</p>
+            <p>任务状态：待处理 {{ screening.by_status.pending ?? 0 }} / 进行中 {{ screening.by_status.in_progress ?? 0 }} / 已完成 {{ screening.by_status.done ?? 0 }} / 已退回 {{ screening.by_status.returned ?? 0 }}</p>
             <p>参考阳性 {{ screening.positive }} / 阴性 {{ screening.negative }}（阳性率 {{ (screening.positive_rate * 100).toFixed(1) }}%）</p>
             <p>平均复核耗时：{{ screening.avg_review_seconds.toFixed(2) }}s</p>
+            <p>质量回流：驳回率 {{ ((screening.by_decision.reject ?? 0) / Math.max(1, (screening.by_decision.accept ?? 0) + (screening.by_decision.modify ?? 0) + (screening.by_decision.reject ?? 0)) * 100).toFixed(1) }}% · 退回 {{ screening.by_status.returned ?? 0 }} 次</p>
           </div>
         </el-card>
       </el-col>

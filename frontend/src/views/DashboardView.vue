@@ -13,6 +13,7 @@ const auth = useAuthStore()
 const stats = ref<StatsOverview | null>(null)
 const loading = ref(false)
 const todo = ref({ screeningPending: 0, screeningMine: 0, annotationReview: 0, annotationMine: 0 })
+const loopTodos = ref<{ id: string; type: string; label: string; path: string }[]>([])
 
 const canScreen = computed(() => auth.hasAny('screener', 'admin'))
 const canAnnotate = computed(() => auth.hasAny('annotator', 'admin', 'reviewer'))
@@ -65,12 +66,32 @@ const quick = [
   { label: '模型与指标', desc: '版本、Dice 与启用回滚', icon: Cpu, path: '/models' }
 ]
 
+async function loadLoopTodos() {
+  try {
+    const resp = await api.getTodos() as { data: { items: { type: string; id: string; link?: string }[]; total: number } }
+    const labelMap: Record<string, string> = {
+      'annotation.pending_review': '待审核标注',
+      'report.pending_sign': '待签发报告',
+      'screen.returned': '被退回任务',
+      'task.failed': '失败任务'
+    }
+    loopTodos.value = (resp.data?.items ?? []).map((it) => ({
+      id: it.id,
+      type: it.type,
+      label: labelMap[it.type] ?? it.type,
+      path: it.link ?? ''
+    }))
+  } catch {
+    loopTodos.value = []
+  }
+}
 async function load() {
   loading.value = true
   try {
     const resp = await api.getStatsOverview()
     stats.value = (resp as { data: StatsOverview }).data
     await loadTodos()
+    await loadLoopTodos()
   } finally {
     loading.value = false
   }

@@ -229,6 +229,16 @@ async function convertBatch(batch: InferenceBatch) {
   }
 }
 
+async function retryBatch(batch: InferenceBatch) {
+  try {
+    await api.retryInferenceBatch(batch.id)
+    ElMessage.success('已重试失败子任务')
+    await pollBatch(batch)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '重试失败')
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -260,6 +270,14 @@ onMounted(load)
         </el-table-column>
         <el-table-column label="HD95(px)" width="110">
           <template #default="{ row }">{{ metric(row, 'hd95') }}</template>
+        </el-table-column>
+        <el-table-column label="指标来源" width="210">
+          <template #default="{ row }">
+            <el-tag v-if="row.metrics_source === 'platform_eval'" type="success" size="small">平台评估</el-tag>
+            <el-tag v-else type="info" size="small">注册登记</el-tag>
+            <div v-if="row.evaluated_at" class="muted">{{ row.evaluated_at }}</div>
+            <div v-if="row.regression?.result" class="muted">回归：{{ row.regression.result }}</div>
+          </template>
         </el-table-column>
         <el-table-column prop="weights_sha256" label="权重 SHA256" show-overflow-tooltip />
         <el-table-column label="操作" width="120">
@@ -316,7 +334,7 @@ onMounted(load)
             <span class="muted">成功 {{ row.succeeded }} / 失败 {{ row.failed }} / 共 {{ row.total }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160">
+        <el-table-column label="操作" width="250">
           <template #default="{ row }">
             <el-button
               size="small"
@@ -324,6 +342,7 @@ onMounted(load)
               :loading="converting === row.id"
               @click="convertBatch(row)"
             >转标注草稿</el-button>
+            <el-button v-if="row.status === 'partial'" size="small" type="warning" @click="retryBatch(row)">重试失败项</el-button>
           </template>
         </el-table-column>
       </el-table>

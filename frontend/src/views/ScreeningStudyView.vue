@@ -29,6 +29,9 @@ const modifyTool = ref<'brush' | 'eraser' | 'polygon'>('brush')
 const modifyBrush = ref(4)
 const modifyView = reactive({ scale: 1, tx: 0, ty: 0 })
 const maskCanvasRef = ref<InstanceType<typeof MaskCanvas> | null>(null)
+const rejectVisible = ref(false)
+const rejectReason = ref('')
+const rejectFollowUp = ref<'' | 're_infer' | 'manual' | 'transfer'>('')
 
 const currentImage = computed<Image | null>(() => {
   const images = study.value?.images ?? []
@@ -165,17 +168,7 @@ async function review(decision: string) {
     return
   }
   if (decision === 'reject') {
-      const { value } = await ElMessageBox.prompt('请输入驳回原因；本入口将退回人工重做', '驳回检查', {
-      inputPlaceholder: '原因…'
-    })
-    submitting.value = true
-    try {
-        await api.reviewStudy(study.value.id, { decision, comment: value, follow_up: 'manual' })
-        ElMessage.success('已退回，重新领取后请人工修改标注')
-      router.push('/screening/worklist')
-    } finally {
-      submitting.value = false
-    }
+    openReject()
     return
   }
   await ElMessageBox.confirm('确认提交复核结论？', '复核确认', { type: 'warning' })
@@ -224,6 +217,34 @@ function onKeydown(event: KeyboardEvent) {
   else if (key === 'arrowright') switchImage(Math.min((study.value?.images.length ?? 1) - 1, imageIndex.value + 1))
 }
 
+function openReject() {
+  rejectReason.value = ''
+  rejectFollowUp.value = ''
+  rejectVisible.value = true
+}
+
+async function submitReject() {
+  if (!study.value) return
+  if (!rejectReason.value.trim()) {
+    ElMessage.warning('请填写驳回原因')
+    return
+  }
+  submitting.value = true
+  try {
+    await api.reviewStudy(study.value.id, {
+      decision: 'reject',
+      comment: rejectReason.value,
+      follow_up: rejectFollowUp.value || undefined
+    })
+    rejectVisible.value = false
+    ElMessage.success('已驳回，任务已退回待处理')
+    router.push('/screening/worklist')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '驳回失败')
+  } finally {
+    submitting.value = false
+  }
+}
 async function toReport() {
   if (!study.value) return
   try {
@@ -354,6 +375,24 @@ async function toReport() {
       <template #footer>
         <el-button @click="modifyVisible = false">取消</el-button>
         <el-button type="primary" :loading="modifySaving" @click="submitModify">提交修改并完成复核</el-button>
+      </template>
+    </el-dialog>
+    <el-dialog v-model="rejectVisible" title="驳回检查" width="520px">
+      <el-form label-position="top">
+        <el-form-item label="驳回原因（必填）">
+          <el-input v-model="rejectReason" type="textarea" :rows="3" placeholder="说明驳回原因…" />
+        </el-form-item>
+        <el-form-item label="后续跟进方式">
+          <el-radio-group v-model="rejectFollowUp">
+            <el-radio value="re_infer">重跑推理</el-radio>
+            <el-radio value="manual">人工标注替代</el-radio>
+            <el-radio value="transfer">改派人工</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="rejectVisible = false">取消</el-button>
+        <el-button type="danger" :loading="submitting" @click="submitReject">确认驳回</el-button>
       </template>
     </el-dialog>
   </div>

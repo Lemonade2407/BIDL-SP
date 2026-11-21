@@ -11,6 +11,7 @@ const routes: RouteRecordRaw[] = [
     redirect: '/dashboard',
     children: [
       { path: 'dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue') },
+      { path: 'notifications', name: 'notifications', component: () => import('@/views/NotificationsView.vue') },
       { path: 'data/import', name: 'data-import', component: () => import('@/views/DataImportView.vue'), meta: { roles: ['admin', 'data_engineer'] } },
       { path: 'data/images', name: 'data-images', component: () => import('@/views/DataImagesView.vue') },
       { path: 'data/datasets', name: 'data-datasets', component: () => import('@/views/DataDatasetsView.vue') },

@@ -28,6 +28,7 @@ export type QualityFlag =
   | 'MASK_MISSING'
 export type Role = 'admin' | 'data_engineer' | 'annotator' | 'screener' | 'reviewer'
 export type UserStatus = 'active' | 'disabled'
+export type FollowUp = 're_infer' | 'manual' | 'transfer'
 
 // ===== 通用 =====
 export interface UserRef {
@@ -133,6 +134,12 @@ export interface DatasetVersion {
   created_at?: string
 }
 
+export interface DatasetGap {
+  missing_approved_count: number
+  missing_approved_sample: { image_id: string; relative_path: string; class_label: ClassLabel | null }[]
+  missing_mask_count: number
+}
+
 export interface RleMask {
   size: [number, number]
   counts: number[]
@@ -181,6 +188,10 @@ export interface ModelVersion {
   weights_sha256: string
   config: Record<string, unknown>
   metrics?: Record<string, unknown> | null
+  metrics_source?: string | null
+  evaluated_at?: string | null
+  evaluation_job_id?: string | null
+  regression?: Record<string, unknown> | null
   status: ModelVersionStatus
   created_at?: string
 }
@@ -226,6 +237,7 @@ export interface InferenceBatch {
   succeeded: number
   failed: number
   progress: number
+  failed_items?: { task_id: string; image_id: string; error?: string }[]
   created_at?: string
 }
 
@@ -279,6 +291,9 @@ export interface Study {
   images: Image[]
   latest_inference?: InferenceResult | null
   timeline: TimelineEvent[]
+  returned_by?: UserRef | null
+  returned_at?: string | null
+  return_reason?: string | null
   created_at?: string
 }
 
@@ -294,6 +309,10 @@ export interface ScreenTask {
   study_status?: string
   claimed_at?: string | null
   finished_at?: string | null
+  returned_by?: UserRef | null
+  returned_at?: string | null
+  return_reason?: string | null
+  follow_up?: string | null
   created_at?: string
 }
 
@@ -332,6 +351,8 @@ export interface Report {
   version: number
   signed_at?: string | null
   pdf_url?: string | null
+  void_reason?: string | null
+  voided_at?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -364,6 +385,30 @@ export interface StatsOverview {
   reports_signed: number
   positive_rate: number
   avg_review_seconds: number
+}
+
+export type NotificationType =
+  | 'annotation.pending_review'
+  | 'annotation.rejected'
+  | 'report.pending_sign'
+  | 'report.rejected'
+  | 'report.voided'
+  | 'screen.returned'
+  | 'task.failed'
+  | 'dataset.gap'
+  | 'task.overdue'
+
+export interface Notification {
+  id: string
+  user_id: string
+  type: NotificationType | string
+  title: string
+  body: string
+  object_type: string
+  object_id: string
+  link?: string | null
+  read_at?: string | null
+  created_at?: string
 }
 
 // ===== 登录 =====
