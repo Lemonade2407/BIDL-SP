@@ -6,9 +6,10 @@ from algo.adapter.rle import rle_decode
 
 from . import models as m
 from . import schemas as s
-from .common import APIError, audit, get, page, reply, serialize, user_ref
-from .data_service import png
+from .common import APIError, audit, get, page, remember, replay, reply, serialize, user_ref
+from .data_service import png, version_images
 from .db import get_db, now, uid
+from .notifications import notify, recipients
 from .security import current_user, require
 from .storage import storage
 
@@ -207,7 +208,7 @@ def claim(db, cls, id, user):
     result = db.execute(
         update(cls)
         .where(cls.id == id, cls.status == "pending", cls.assignee_id.is_(None))
-        .values(status="in_progress", assignee_id=user.id, claimed_at=now())
+        .values(status="in_progress", assignee_id=user.id, claimed_at=now(), overdue_at=None)
     )
     if result.rowcount != 1:
         raise APIError(409, "任务已被领取或已完成")
@@ -256,6 +257,73 @@ def create_tasks(
         tasks.append(obj.id)
         audit(db, user, "annotation.task.create", obj, request)
     return reply(request, {"created": len(tasks), "task_ids": tasks}, 201)
+
+
+@router.post("/annotation-tasks/batch", status_code=201)
+def batch_tasks(
+    body: s.AnnotationBatch,
+    request: Request,
+    db=Depends(get_db, scope="function"),
+    user=Depends(require("annotation:manage")),
+):
+    # Serialize requests by actor, then image, including idempotency records.
+    get(db, m.User, user.id, lock=True)
+    payload = body.model_dump()
+    previous = replay(request, db, user, payload)
+    if previous:
+        return previous
+    stmt = select(m.Image)
+    if body.dataset_version_id:
+        version = get(db, m.DatasetVersion, body.dataset_version_id)
+        if version.status == "draft":
+            images, _ = version_images(db, version)
+            stmt = stmt.where(m.Image.id.in_([i.id for i in images]))
+        else:
+            stmt = stmt.where(
+                m.Image.id.in_(
+                    select(m.DatasetItem.image_id).where(m.DatasetItem.dataset_version_id == version.id)
+                )
+            )
+    elif body.dataset_id:
+        get(db, m.Dataset, body.dataset_id)
+        stmt = stmt.where(m.Image.dataset_id == body.dataset_id)
+    else:
+        stmt = stmt.where(m.Image.id.in_(body.image_ids))
+        if len(list(db.scalars(stmt))) != len(set(body.image_ids)):
+            raise APIError(404, "部分影像不存在")
+    if body.class_labels:
+        stmt = stmt.where(m.Image.class_label.in_(body.class_labels))
+    images = list(db.scalars(stmt.order_by(m.Image.id).with_for_update()))
+    created, existing, skipped, ids = 0, 0, 0, []
+    for image in images:
+        approved = db.scalar(
+            select(m.Annotation).where(m.Annotation.image_id == image.id, m.Annotation.status == "approved")
+        )
+        if body.only_missing_approved and approved and storage.exists("bidlsp-curated", approved.mask_key):
+            skipped += 1
+            continue
+        task = db.scalar(
+            select(m.AnnotationTask).where(
+                m.AnnotationTask.image_id == image.id, m.AnnotationTask.status != "approved"
+            )
+        )
+        if task:
+            existing += 1
+        else:
+            task = m.AnnotationTask(
+                image_id=image.id,
+                dataset_version_id=body.dataset_version_id,
+                priority=body.priority,
+                required_annotators=body.required_annotators,
+            )
+            db.add(task)
+            db.flush()
+            created += 1
+        ids.append(task.id)
+    result = {"created": created, "existing": existing, "skipped": skipped, "task_ids": ids}
+    audit(db, user, "annotation.task.batch", user, request, result)
+    remember(request, db, user, payload, result, 201)
+    return reply(request, result, 201)
 
 
 @router.get("/annotation-tasks")
@@ -310,6 +378,7 @@ def join_task(
     if count >= task.required_annotators:
         raise APIError(409, "任务人数已满")
     sync_assignment(db, task, user, None, "in_progress")
+    task.claimed_at, task.overdue_at = now(), None
     if task.status == "pending":
         task.status, task.claimed_at = "in_progress", now()
         if not task.assignee_id:
@@ -420,6 +489,15 @@ def submit(
         audit(db, user, "annotation.submit", obj, request)
         db.flush()
         evaluate_consistency(db, task, user, request)
+        if task.status == "submitted":
+            notify(
+                db,
+                recipients(db, "annotation:review", user.id),
+                "annotation.pending_review",
+                obj,
+                "标注待审核",
+                link=f"/annotation/review/{obj.id}",
+            )
         return reply(request, annotation_json(db, obj))
     if task.annotation_id != id or task.assignee_id != user.id:
         raise APIError(409, "只能提交当前任务的最新草稿")
@@ -428,6 +506,14 @@ def submit(
         obj.note = body.note
     audit(db, user, "annotation.submit", obj, request)
     db.flush()
+    notify(
+        db,
+        recipients(db, "annotation:review", user.id),
+        "annotation.pending_review",
+        obj,
+        "标注待审核",
+        link=f"/annotation/review/{obj.id}",
+    )
     return reply(request, annotation_json(db, obj))
 
 
@@ -491,6 +577,21 @@ def review(
                 close_assignments(db, task, id)
     audit(db, user, "annotation.review", obj, request, body.model_dump())
     db.flush()
+    if body.decision == "reject":
+        if task and get(db, m.User, obj.annotator_id).status != "active":
+            from .task_lifecycle import release_work
+
+            release_work(db, task, obj.annotator_id)
+            audit(db, user, "task.release_disabled", task, request, {"user_id": obj.annotator_id})
+        notify(
+            db,
+            [obj.annotator_id],
+            "annotation.rejected",
+            obj,
+            "标注被驳回",
+            body.comment,
+            f"/annotation/editor/{obj.image_id}",
+        )
     return reply(request, annotation_json(db, obj))
 
 

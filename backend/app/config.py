@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     allow_registration: bool = True
     # 默认阻止未在平台完成离线评估的模型版本被启用；仅演示环境可显式放行。
     allow_unverified_model: bool = False
+    annotation_sla_hours: int = Field(default=48, ge=1)
+    screening_sla_hours: int = Field(default=24, ge=1)
+    task_release_grace_hours: int = Field(default=24, ge=1)
 
 
 settings = Settings()

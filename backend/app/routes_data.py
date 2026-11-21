@@ -12,8 +12,9 @@ from . import models as m
 from . import schemas as s
 from .common import APIError, audit, get, page, queue, remember, replay, reply, serialize
 from .config import settings
-from .data_service import freeze, validate_archive
+from .data_service import dataset_gap, freeze, validate_archive
 from .db import get_db, now, uid
+from .notifications import notify
 from .security import current_user, has, require
 from .storage import storage
 
@@ -165,9 +166,7 @@ def images(request: Request, db=Depends(get_db, scope="function"), user=Depends(
 
 
 @router.get("/studies")
-def studies(
-    request: Request, db=Depends(get_db, scope="function"), user=Depends(require("image:read"))
-):
+def studies(request: Request, db=Depends(get_db, scope="function"), user=Depends(require("image:read"))):
     p = request.query_params
     try:
         number, size = int(p.get("page", 1)), int(p.get("page_size", 20))
@@ -195,21 +194,28 @@ def studies(
         .limit(size)
     ).all()
     ids = [study.id for study, _ in rows]
-    counts = dict(
-        db.execute(
-            select(m.Image.study_id, func.count())
-            .where(m.Image.study_id.in_(ids))
-            .group_by(m.Image.study_id)
-        ).all()
-    ) if ids else {}
-    tasks = {
-        t.study_id: t
-        for t in db.scalars(select(m.ScreenTask).where(m.ScreenTask.study_id.in_(ids)))
-    } if ids else {}
+    counts = (
+        dict(
+            db.execute(
+                select(m.Image.study_id, func.count())
+                .where(m.Image.study_id.in_(ids))
+                .group_by(m.Image.study_id)
+            ).all()
+        )
+        if ids
+        else {}
+    )
+    tasks = (
+        {t.study_id: t for t in db.scalars(select(m.ScreenTask).where(m.ScreenTask.study_id.in_(ids)))}
+        if ids
+        else {}
+    )
     reports = {}
-    for report in db.scalars(
-        select(m.Report).where(m.Report.study_id.in_(ids)).order_by(m.Report.version)
-    ) if ids else []:
+    for report in (
+        db.scalars(select(m.Report).where(m.Report.study_id.in_(ids)).order_by(m.Report.version))
+        if ids
+        else []
+    ):
         reports[report.study_id] = report
     data = []
     for study, patient in rows:
@@ -332,7 +338,36 @@ def create_version(
 def freeze_version(
     id: str, request: Request, db=Depends(get_db, scope="function"), user=Depends(require("dataset:write"))
 ):
-    obj = freeze(db, get(db, m.DatasetVersion, id, lock=True), user, request)
+    version = get(db, m.DatasetVersion, id, lock=True)
+    if version.status == "draft":
+        gap = dataset_gap(db, version)
+        if gap["missing_approved_count"] or gap["missing_mask_count"]:
+            from fastapi.responses import JSONResponse
+
+            from .common import fingerprint
+
+            audit(db, user, "dataset.gap", version, request, gap)
+            notify(
+                db,
+                [version.created_by],
+                "dataset.gap",
+                version,
+                "数据集冻结存在缺口",
+                "请生成补标任务，补齐后重新冻结",
+                "/data/datasets",
+                version=fingerprint(gap),
+            )
+            # Return an error response normally so the gap audit and notice commit.
+            return JSONResponse(
+                {
+                    "code": "DATASET_GAP",
+                    "message": "存在缺少已通过标注或掩膜的影像",
+                    "details": gap,
+                    "request_id": request.state.request_id,
+                },
+                status_code=422,
+            )
+    obj = freeze(db, version, user, request)
     return reply(request, version_json(obj))
 
 

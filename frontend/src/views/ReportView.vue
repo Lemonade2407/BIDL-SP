@@ -36,23 +36,23 @@ async function save() {
 }
 
 async function submit() {
-  await api.submitReport(report.value!.id)
+  const resp = await api.submitReport(report.value!.id) as { data: Report }
   ElMessage.success('已提交审核')
-  report.value!.status = 'pending_review'
+  report.value = resp.data
 }
 
 async function sign() {
   await ElMessageBox.confirm('确认签发该报告？', '签发确认', { type: 'warning' })
-  await api.signReport(report.value!.id, { decision: 'sign' })
+  const resp = await api.signReport(report.value!.id, { decision: 'sign' }) as { data: Report }
   ElMessage.success('报告已签发')
-  report.value!.status = 'signed'
+  report.value = resp.data
 }
 
 async function reject() {
   const { value } = await ElMessageBox.prompt('请输入驳回原因', '驳回报告', { inputPlaceholder: '原因…' })
-  await api.signReport(report.value!.id, { decision: 'reject', comment: value })
+  const resp = await api.signReport(report.value!.id, { decision: 'reject', comment: value }) as { data: Report }
   ElMessage.success('已驳回')
-  report.value!.status = 'rejected'
+  report.value = resp.data
 }
 
 async function exportPdf(mode: 'download' | 'print') {
@@ -100,7 +100,7 @@ async function exportPdf(mode: 'download' | 'print') {
         </div>
       </div>
       <el-divider />
-      <ReportEditor :content="report.content" :readonly="report.status === 'signed'" @update:content="onContent" />
+      <ReportEditor :content="report.content" :readonly="report.status !== 'draft'" @update:content="onContent" />
       <div class="disclaimer" style="margin-top: 12px">
         本报告仅供科研/教学使用，不作为临床诊断依据。签发人：{{ report.reviewer?.display_name || '—' }}
       </div>

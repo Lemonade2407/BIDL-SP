@@ -96,6 +96,22 @@ class Storage:
         except Exception:
             raise APIError(503, "对象存储读取失败") from None
 
+    def exists(self, bucket, key):
+        if not key:
+            return False
+        path = self.path(bucket, key)
+        if self.local:
+            return path.is_file()
+        from minio.error import S3Error
+
+        try:
+            self.client.stat_object(bucket, key)
+            return True
+        except S3Error as exc:
+            if exc.code in ("NoSuchKey", "NoSuchObject", "NoSuchBucket"):
+                return False
+            raise APIError(503, "对象存储检查失败") from exc
+
     def download(self, bucket, key, target):
         self.path(bucket, key)
         target = Path(target)
